@@ -16,18 +16,7 @@
 package org.onosproject.fwd;
 
 import com.google.common.collect.ImmutableSet;
-import org.onlab.packet.Ethernet;
-import org.onlab.packet.ICMP;
-import org.onlab.packet.ICMP6;
-import org.onlab.packet.IPv4;
-import org.onlab.packet.IPv6;
-import org.onlab.packet.Ip4Prefix;
-import org.onlab.packet.Ip6Prefix;
-import org.onlab.packet.MacAddress;
-import org.onlab.packet.TCP;
-import org.onlab.packet.TpPort;
-import org.onlab.packet.UDP;
-import org.onlab.packet.VlanId;
+import org.onlab.packet.*;
 import org.onlab.util.KryoNamespace;
 import org.onlab.util.Tools;
 import org.onosproject.cfg.ComponentConfigService;
@@ -43,9 +32,7 @@ import org.onosproject.net.flow.FlowRule;
 import org.onosproject.net.flow.FlowRuleService;
 import org.onosproject.net.flow.TrafficSelector;
 import org.onosproject.net.flow.TrafficTreatment;
-import org.onosproject.net.flow.criteria.Criteria;
-import org.onosproject.net.flow.criteria.Criterion;
-import org.onosproject.net.flow.criteria.EthCriterion;
+import org.onosproject.net.flow.criteria.*;
 import org.onosproject.net.flow.instructions.Instruction;
 import org.onosproject.net.flow.instructions.Instructions;
 import org.onosproject.net.flowobjective.*;
@@ -77,6 +64,7 @@ import java.io.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
@@ -264,6 +252,51 @@ public class ReactiveForwarding {
         }
     }
 
+    private void blockingRule(HostId from, HostId to, boolean remove) {
+        try {
+
+            FilteringObjective.Builder filteringObjectiveBuilder = DefaultFilteringObjective.builder()
+                    .deny().fromApp(appId)
+                    .withPriority(50000)
+                    .makeTemporary(10);
+
+            Criterion criteria=null;
+            if (from != null) {
+                criteria=Criteria.matchEthSrc(from.mac());
+                filteringObjectiveBuilder = filteringObjectiveBuilder.addCondition(criteria);
+            }
+            if (to != null) {
+                criteria=Criteria.matchEthDst(to.mac());
+                filteringObjectiveBuilder = filteringObjectiveBuilder.addCondition(criteria);
+            }
+
+            filteringObjectiveBuilder.withKey(criteria);
+
+            if(remove){
+                log.warn("blocking from=" + from+" to="+to+" with key "+criteria);
+            }
+            else{
+                log.warn("releasing from=" + from+" to="+to+" with key "+criteria);
+            }
+
+            FilteringObjective objective;
+            if (remove) {
+                objective = filteringObjectiveBuilder.remove();
+            } else {
+                objective = filteringObjectiveBuilder.add();
+            }
+
+            for (Device d : deviceService.getDevices(Device.Type.SWITCH)) {
+                flowObjectiveService.apply(d.id(), objective);
+
+            }
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
+    }
+
+
+
     @Activate
     public void activate(ComponentContext context) {
         KryoNamespace.Builder metricSerializer = KryoNamespace.newBuilder()
@@ -306,18 +339,18 @@ public class ReactiveForwarding {
                                     case "block":
                                         if (blockedHosts.add(HostId.hostId(items[1]))) {
                                             logToFile("block " + HostId.hostId(items[1]));
-                                            processor.dropAllToHost(HostId.hostId(items[1]));
+                                            blockingRule(HostId.hostId(items[1]), null, false);
+                                            blockingRule(null, HostId.hostId(items[1]), false);
 
                                         }
                                         break;
-                                    case "allow":
-                                        if (blockedHosts.remove(HostId.hostId(items[1]))) {
-                                            logToFile("unblock " + HostId.hostId(items[1]));
-                                        }
-                                        break;
+
                                     case "block-from-to":
-                                        if (blockedHostPairs.add(HostId.hostId(items[1]) + "" + HostId.hostId(items[2]))) {
+                                        if (blockedHostPairs.add(HostId.hostId(items[1]) + ";" + HostId.hostId(items[2]))) {
                                             logToFile("block from " + HostId.hostId(items[1]) + " to " + HostId.hostId(items[2]));
+
+                                            blockingRule(HostId.hostId(items[2]), HostId.hostId(items[1]), false);
+                                            blockingRule(HostId.hostId(items[1]), HostId.hostId(items[2]), false);
                                         }
                                         break;
                                     default:
@@ -328,9 +361,29 @@ public class ReactiveForwarding {
 
                         //remove all blocks that are not on the file anymore
                         Set<HostId> newlyAllowedHosts = blockedHosts.stream().filter(l -> !lines.contains("block " + l.toString())).collect(Collectors.toSet());
-                        newlyAllowedHosts.stream().peek(h -> logToFile("unblock " + h)).forEach(h -> processor.removeDropAllToHost(h));
+                        newlyAllowedHosts.stream().peek(h -> logToFile("unblock " + h)).peek(h -> blockingRule(h, null, true)).forEach(h -> blockingRule(null, h, true));
                         blockedHosts.removeAll(newlyAllowedHosts);
 
+
+                        Predicate<String[]> p1 = l -> lines.contains("block-from-to " + l[0] + " " + l[1]);
+                        Predicate<String[]> p2 = l -> lines.contains("block-from-to " + l[1] + " " + l[0]);
+
+                        Set<String[]> newlyAllowedHostPair = blockedHostPairs.stream().map(h -> h.split(";")).filter(Predicate.not(p1).and(Predicate.not(p2))).collect(Collectors.toSet());
+                        for (String[] hosts : newlyAllowedHostPair) {
+
+                            {
+                                var a1 =hosts[0] + ";" + hosts[1];
+                                blockingRule(HostId.hostId(hosts[0]),HostId.hostId(hosts[1]),true);
+                                blockedHostPairs.remove(a1);
+                            }
+                            {
+                                var a1 =hosts[1] + ";" + hosts[0];
+                                blockingRule(HostId.hostId(hosts[1]),HostId.hostId(hosts[0]),true);
+                                blockedHostPairs.remove(a1);
+                            }
+
+
+                        }
                         Thread.sleep(3000);
 
 
@@ -651,24 +704,18 @@ public class ReactiveForwarding {
             installRule(context, path.src().port(), macMetrics);
         }
 
-
-
-        private void blockingRule(HostId hostId,boolean remove) {
+        private void removeDropAllToHost(HostId hostId) {
             FilteringObjective.Builder filteringObjectiveBuilder = DefaultFilteringObjective.builder()
                     .deny().fromApp(appId)
+
                     .withPriority(50000)
-                    .withKey(Criteria.matchEthDst(hostId.mac()))
                     .addCondition(Criteria.matchEthDst(hostId.mac()));
 
 
             for (Device d : deviceService.getDevices(Device.Type.SWITCH)) {
                 try {
-                    if(remove) {
-                        flowObjectiveService.apply(d.id(), filteringObjectiveBuilder.remove());
-                    }
-                    else{
-                        flowObjectiveService.apply(d.id(), filteringObjectiveBuilder.add());
-                    }
+
+                    flowObjectiveService.apply(d.id(), filteringObjectiveBuilder.remove());
 
                 } catch (Throwable t) {
                     t.printStackTrace();
@@ -676,7 +723,27 @@ public class ReactiveForwarding {
             }
         }
 
+        private void dropAllToHost(HostId hostId) {
 
+
+            FilteringObjective.Builder filteringObjectiveBuilder = DefaultFilteringObjective.builder()
+                    .deny().fromApp(appId)
+                    .withPriority(50000)
+                    .addCondition(Criteria.matchEthDst(hostId.mac()));
+
+
+            for (Device d : deviceService.getDevices(Device.Type.SWITCH)) {
+                try {
+                    log.warn("device " + d.toString() + " purged from flow ");
+                    log.warn("@@@@@@@@ " + filteringObjectiveBuilder.add());
+                    flowObjectiveService.apply(d.id(), filteringObjectiveBuilder.add());
+                    log.warn("@@@@@@@@ done");
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                }
+            }
+        }
+    }
 
     // Indicates whether this is a control packet, e.g. LLDP, BDDP
     private boolean isControlPacket(Ethernet eth) {
