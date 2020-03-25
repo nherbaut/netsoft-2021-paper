@@ -1,0 +1,112 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{lipsum}  
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[]{algorithm2e}
+\usepackage{amssymb}
+\usepackage{subfig}
+\usepackage{lipsum}  
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+
+
+\newcommand\todo[1]{{\textcolor{red}{#1}}}
+
+\begin{document}
+
+\title{Auditability model for Intent-based SDN Applications}
+
+
+\author{\IEEEauthorblockN{Nicolas Herbaut , Camilo Correa , Jacques Robin} 
+\IEEEauthorblockA{Centre de Recherche en Informatique \\
+\textit{Universit\'e Paris 1 Panthéon-Sorbonne}\\
+Paris, France }
+\and
+\IEEEauthorblockN{ Raul Mazo }
+\IEEEauthorblockA{Lab-STICC \\
+\textit{ENSTA Bretagne}\\
+Brest, France
+}
+}
+
+
+\maketitle
+
+\section{Conformance Checking Algorithm}
+ 
+\begin{itemize}
+\item $\mathbb{I}$ The Intents model
+\item $\mathbb{F}$ The Flows model
+\item $\mathbb{T}$ Topology 
+\item $\mathbb{T}$ Hosts
+\item $\mathbb{C}$ The security policiy configuration
+\item $S^f_b$: the set of host pairs for which at least one host is blocked and flows are still in place in the topology
+\item $S^f_c$: the set of host pairs none of which is blocked by the configuration for which the connectivity flows are missing
+\item $S^i_b$: the set of hosts pairs for which at least one host is blocked and intents are not installed 
+\item $S^i_c$: the set of host pairs none of which is blocked by the configuration for which the intents are not installed.
+\end{itemize}
+
+During the conformance-checking phase, we repeat algorithm~\ref{algo:conformance-checking} for each log and each SCO configuration, to report $S^f_b$, $S^f_c$, $S^i_b$, $S^i_c$
+ 
+In algorithm~\ref{algo:conformance-checking}, the $K\_shortest\_simple\_path$ function is implemented from~\cite{Yen1971} with a complexity of $\mathcal{O}(KN^3)$, and generates all the non-looping path from two hosts, starting with the smallest.
+Assuming that there exist a cache of paths, the path lookup function complexity is assumed $\mathcal{O}(1)$.
+We can see that the conformance algorithm of flow conformance has $\mathcal{O}(K L N^2 )$ with $N$ the number of hosts and devices, $K$ the number of simple paths between 2 hosts and $L$ the average size of the $K$-shortest path, depending on the topology characteristics. The conformance checking of flow-based security and connectivity is at least cubic $\square$.
+
+Intent conformance, on the other hand, is straightforward, since it involves looking up the intent list composed of host pairs to assure that no intent grant connectivity to a blocked host ($\mathcal{O}(n)$) and making sure that for each non-blocked host pair, there exist an intent ($\mathcal{O}(n^2)$). The conformance checking of intent-based security and connectivity is quadratic $\square$.
+
+\begin{algorithm}
+  \KwData{$(\mathbb{F,I,T,C,H})$}
+  \KwResult{$S^f_b, S^f_c, S^i_b, S^f_c$ }\
+$C, \overline{C}, S^f_b, S^f_c, S^i_b, S^f_c \gets \{ \}$ \;
+  \For{$(h_{src},h_{dst})\in\mathbb{H}\times\mathbb{H} \setminus \{ h_{src} \neq h_{dst} \} $}{
+      \eIf{$"\text{block}~h_{src}~h_{dst}" \in \mathbb{C}$}{
+        $\overline{C} \gets \overline{C} \cup \{ (h_{src},h_{dst}) \}$ \;
+      }{
+        $C \gets C \cup \{ (h_{src},h_{dst}) \}$ \;
+      }
+      \For{$p \in \text{K\_shortest\_simple\_path}(\mathbb{T},\mathbb{F},h_{src},h_{dst}) $}{
+        $\text{connected} \gets \text{true}$ \;
+        \For{ $(s,d) \in p$}{
+          \If{ $f_{s,d} \notin \mathbb{F}$}{
+            $\text{connected} \gets \text{false}$ \;
+            continue outter For;
+          }
+        }
+        
+        \uIf{$\text{connected} \land (h_{src},h_{dst}) \in \overline{C} $}{
+          $S^f_b \gets S^f_b \cup \{ (h_{src},h_{dst})\}$
+        }
+        \uElseIf{$ \neg \text{~connected} \land (h_{src},h_{dst}) \in C $}{
+          $S^f_c \gets S^f_c \cup \{ (h_{src},h_{dst})\}$
+        }
+      }
+    }
+      \If{$\mathbb{I} \neq \{ \}$}{
+              \For{$(h_{src},h_{dst})\in\mathbb{H}\times\mathbb{H} \setminus \{ h_{src} \neq h_{dst} \} $}{
+                \uIf{ $(h_{src},h_{dst}) \in \mathbb{I} \land (h_{src},h_{dst}) \in{\mathbb{C}}$}{
+                  $S^i_b \gets S^i_b \cup \{ (h_{src},h_{dst})\}$
+                }
+                \uElseIf{$ (h_{src},h_{dst}) \notin \mathbb{I} \land (h_{src},h_{dst}) \in \overline{C} $}{
+                  $S^i_c \gets S^i_c \cup \{ (h_{src},h_{dst})\}$
+              
+              }
+        }
+    }
+  \caption{Conformance checking algorithm \label{algo:conformance-checking}}
+ \end{algorithm}
+
+\bibliographystyle{./bibliography/IEEEtran}
+\bibliography{./bibliography/IEEEexample}
+
+
+
+\end{document}
+
