@@ -15,13 +15,20 @@
  */
 package org.onosproject.ifwd;
 
-import com.google.common.collect.Streams;
-import org.onosproject.net.intent.*;
-import org.osgi.service.component.annotations.Activate;
-import org.osgi.service.component.annotations.Component;
-import org.osgi.service.component.annotations.Deactivate;
-import org.osgi.service.component.annotations.Reference;
-import org.osgi.service.component.annotations.ReferenceCardinality;
+import static org.slf4j.LoggerFactory.getLogger;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.Writer;
+import java.util.Collection;
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
 import org.onlab.packet.Ethernet;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
@@ -37,6 +44,10 @@ import org.onosproject.net.flowobjective.DefaultForwardingObjective;
 import org.onosproject.net.flowobjective.FlowObjectiveService;
 import org.onosproject.net.flowobjective.ForwardingObjective;
 import org.onosproject.net.host.HostService;
+import org.onosproject.net.intent.HostToHostIntent;
+import org.onosproject.net.intent.IntentService;
+import org.onosproject.net.intent.IntentState;
+import org.onosproject.net.intent.Key;
 import org.onosproject.net.packet.DefaultOutboundPacket;
 import org.onosproject.net.packet.InboundPacket;
 import org.onosproject.net.packet.OutboundPacket;
@@ -45,14 +56,16 @@ import org.onosproject.net.packet.PacketPriority;
 import org.onosproject.net.packet.PacketProcessor;
 import org.onosproject.net.packet.PacketService;
 import org.onosproject.net.topology.TopologyService;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
 import org.slf4j.Logger;
 
-import java.io.*;
-import java.util.*;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
+import com.google.common.collect.Streams;
 
-import static org.slf4j.LoggerFactory.getLogger;
+import fr.pantheosorbonne.cri.ClientApp;
 
 /**
  * WORK-IN-PROGRESS: Sample reactive forwarding application using intent framework.
@@ -96,6 +109,15 @@ public class IntentReactiveForwarding {
 
     @Activate
     public void activate() {
+    	
+    	try {
+			ClientApp.main(new String[0]);
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			log.error("bc failed", e);
+			
+		}
+    	
         appId = coreService.registerApplication("org.onosproject.ifwd");
 
         packetService.addProcessor(processor, PacketProcessor.director(2));
@@ -103,6 +125,10 @@ public class IntentReactiveForwarding {
         TrafficSelector.Builder selector = DefaultTrafficSelector.builder();
         selector.matchEthType(Ethernet.TYPE_IPV4);
         packetService.requestPackets(selector.build(), PacketPriority.REACTIVE, appId);
+
+
+        
+
 
         new Thread(new Runnable() {
             @Override
