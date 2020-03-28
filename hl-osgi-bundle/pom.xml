@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>fr.pantheonsorbonne.cri</groupId>
+	<artifactId>hlf-bundle</artifactId>
+	<version>1.0-SNAPSHOT</version>
+
+	<name>hlf-bundle</name>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<karaf.deploy.path>/tmp/onos-2.3.0/apache-karaf-4.2.6/deploy</karaf.deploy.path>
+	</properties>
+
+	<dependencies>
+
+		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<version>28.2-jre</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.hyperledger.fabric</groupId>
+			<artifactId>fabric-gateway-java</artifactId>
+			<version>1.4.1-SNAPSHOT</version>
+
+			<exclusions>
+
+
+<!-- 				<exclusion> -->
+<!-- 					<groupId>org.bouncycastle</groupId> -->
+<!-- 					<artifactId>bcpkix-jdk15on</artifactId> -->
+<!-- 				</exclusion> -->
+<!-- 				<exclusion> -->
+<!-- 					<groupId>org.bouncycastle</groupId> -->
+<!-- 					<artifactId>bcprov-jdk15on</artifactId> -->
+<!-- 				</exclusion> -->
+			</exclusions>
+		</dependency>
+
+<!-- 		<dependency> -->
+<!-- 			<groupId>org.bouncycastle</groupId> -->
+<!-- 			<artifactId>bcpkix-jdk15on</artifactId> -->
+<!-- 			<version>1.64</version> -->
+<!-- 			<scope>provided</scope> -->
+<!-- 		</dependency> -->
+
+<!-- 		<dependency> -->
+<!-- 			<groupId>org.bouncycastle</groupId> -->
+<!-- 			<artifactId>bcprov-jdk15on</artifactId> -->
+<!-- 			<version>1.64</version> -->
+<!-- 			<scope>provided</scope> -->
+<!-- 		</dependency> -->
+	
+
+	</dependencies>
+
+	<build>
+		<pluginManagement><!-- lock down plugins versions to avoid using Maven 
+				defaults (may be moved to parent pom) -->
+			<plugins>
+				<plugin>
+					<artifactId>maven-clean-plugin</artifactId>
+					<version>3.1.0</version>
+				</plugin>
+				<plugin>
+					<artifactId>maven-site-plugin</artifactId>
+					<version>3.7.1</version>
+				</plugin>
+				<plugin>
+					<artifactId>maven-project-info-reports-plugin</artifactId>
+					<version>3.0.0</version>
+				</plugin>
+				<!-- see http://maven.apache.org/ref/current/maven-core/default-bindings.html#Plugin_bindings_for_jar_packaging -->
+				<plugin>
+					<artifactId>maven-resources-plugin</artifactId>
+					<version>3.0.2</version>
+				</plugin>
+				<plugin>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<version>3.8.0</version>
+				</plugin>
+				<plugin>
+					<artifactId>maven-surefire-plugin</artifactId>
+					<version>2.22.1</version>
+				</plugin>
+				<plugin>
+					<artifactId>maven-jar-plugin</artifactId>
+					<version>3.0.2</version>
+				</plugin>
+				<plugin>
+					<artifactId>maven-install-plugin</artifactId>
+					<version>2.5.2</version>
+				</plugin>
+
+			</plugins>
+		</pluginManagement>
+		<plugins>
+
+			<plugin>
+
+				<artifactId>maven-deploy-plugin</artifactId>
+
+				<configuration>
+					<skip>true</skip>
+				</configuration>
+
+
+
+			</plugin>
+			<plugin>
+				<groupId>org.apache.felix</groupId>
+				<artifactId>maven-bundle-plugin</artifactId>
+				<extensions>true</extensions>
+				<executions>
+					<execution>
+						<goals>
+							<goal>bundle</goal>
+						</goals>
+						<phase>package</phase>
+						<configuration>
+							<instructions>
+								<Embed-Dependency>*;scope=compile|runtime</Embed-Dependency>
+								<Include-Resource>
+  								{maven-resources}, {maven-dependencies}
+  								</Include-Resource>
+								<Embed-Transitive>true</Embed-Transitive>
+								<Export-Package>
+									fr.pantheosorbonne.cri
+								</Export-Package>
+								<Import-Package>
+								javax.crypto.*,javax.net.ssl.*,io.netty.handler.ssl.*,javax.security.*,javax.xml.*</Import-Package>
+								
+								<!--<Embed-Dependency>h2</Embed-Dependency> No need of embedding -->
+							</instructions>
+						</configuration>
+
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<artifactId>maven-resources-plugin</artifactId>
+
+				<executions>
+					<execution>
+						<id>copy-resources</id>
+
+						<phase>package</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+
+					</execution>
+				</executions>
+				<configuration>
+					<outputDirectory>${karaf.deploy.path}</outputDirectory>
+					<resources>
+						<resource>
+							<directory>target</directory>
+							<includes>
+								<include>hlf-bundle-1.0-SNAPSHOT.jar</include>
+							</includes>
+
+						</resource>
+					</resources>
+				</configuration>
+			</plugin>
+
+
+			<plugin>
+				<artifactId>maven-compiler-plugin</artifactId>
+
+				<configuration>
+					<release>11</release>
+				</configuration>
+			</plugin>
+		</plugins>
+
+
+	</build>
+
+	<reporting>
+		<plugins>
+			<plugin>
+				<artifactId>maven-project-info-reports-plugin</artifactId>
+			</plugin>
+		</plugins>
+	</reporting>
+</project>
