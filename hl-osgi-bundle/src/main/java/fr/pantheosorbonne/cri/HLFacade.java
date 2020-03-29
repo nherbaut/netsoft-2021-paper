@@ -31,11 +31,12 @@ public class HLFacade {
 
 	private FileWriter flowWriter;
 	private FileWriter intentWriter;
+	private FileWriter debugWriter;
 
 	private FlowRuleService frs;
 	private DeviceService deviceService;
 	private IntentService intentService;
-	private TopologyService topoService;
+	private TopologyService topoService;;
 
 	public static HLFacadeBuilder getDefaultBuilder() {
 		return new HLFacadeBuilder();
@@ -85,6 +86,7 @@ public class HLFacade {
 		try {
 			flowWriter = new FileWriter("/home/nherbaut/flow-logs", true);
 			intentWriter = new FileWriter("/home/nherbaut/intent-logs", true);
+			debugWriter = new FileWriter("/home/nherbaut/debug-logs", true);
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
@@ -98,30 +100,39 @@ public class HLFacade {
 			}
 
 		}
-		for (Intent intent : intentService.getIntents()) {
-			writeIntent(intent);
+		if (intentService != null) {
+			for (Intent intent : intentService.getIntents()) {
+				writeIntent(intent);
+			}
 		}
 
 	}
-	
+
 	private static String citerionTypeToStr(Criterion.Type type) {
-		if(type.equals(Criterion.Type.ETH_DST)) {
+		if (type.equals(Criterion.Type.ETH_DST)) {
 			return "to:";
-		}
-		else if(type.equals(Criterion.Type.ETH_SRC)) {
+		} else if (type.equals(Criterion.Type.ETH_SRC)) {
 			return "from:";
-		}
-		else {
+		} else {
 			return "na:";
+		}
+	}
+
+	private void writeDebug(String s) {
+		try {
+			debugWriter.write(s+"\n");
+			debugWriter.flush();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
 	}
 
 	public void writeFlow(FlowRule rule) {
 		TopologyGraph graph = topoService.getGraph(topoService.currentTopology());
-		
+
 		StringBuilder builder = new StringBuilder();
 		try {
-			
 
 			String matches = rule.selector().criteria().stream()//
 					.filter(c -> c.getClass().equals(EthCriterion.class))//
@@ -131,30 +142,34 @@ public class HLFacade {
 			if (Strings.isNullOrEmpty(matches)) {
 				return;
 			}
-			
+
 			Function<OutputInstruction, DeviceId> p = o -> graph.getVertexes().stream()//
+					.peek(v -> writeDebug("available vertex:" + v.toString()))
 					.filter(v -> v.deviceId().equals(rule.deviceId()))//
-					.peek( v -> log.warn("vertex: "+v.toString()))
+					.peek(v -> writeDebug("matching vertex with device id" + v.toString()))
 					.map(v -> graph.getEdgesFrom(v).stream()//
-							 //.peek(e -> log.warn("edge: " + e.toString() + " @@@ port: " + e.link().src().port())) //
-							 .filter(e -> e.link().src().port().equals(o.port()))//
-							 .findFirst().orElseThrow().dst().deviceId())//
+							.peek( e -> writeDebug("ports from edge " + e.link().src().port().toString()))
+							.filter(e -> e.link().src().port().equals(o.port()))//
+							.peek( e -> writeDebug("matching ports from edge " + e.link().src().port().toString()))
+							.map( e -> e.dst().deviceId())
+							.peek(d -> writeDebug("matching next device " + d))
+							.findFirst().orElseThrow())//
 					.findFirst()//
 					.orElseThrow();
-					
-					
-			
+
+			writeDebug(rule.treatment().allInstructions().stream().map(i -> i.type().toString()).collect(Collectors.toSet()).stream()
+					.collect(Collectors.joining(","))+"\n");
 			
 			String sendTo = rule.treatment().immediate().stream()//
 					.filter(t -> t instanceof OutputInstruction)//
-					.map(t->(OutputInstruction) t)
-					.peek( o -> log.warn("looking for device connected throught port " + o.port()))
-					.map(p)
-					.map(d -> d.toString())
-					//.map(p -> p.element().)
-					.collect(Collectors.joining(","));
+					.map(t -> (OutputInstruction) t).map(p).map(d -> d.toString()).collect(Collectors.joining(","));
 			
-			
+			if(Strings.isNullOrEmpty(sendTo)) {
+				sendTo="DROP";
+			}else {
+				sendTo="OUTPUT:"+sendTo;
+			}
+
 			builder.append(System.currentTimeMillis());
 			builder.append("\t");
 			builder.append(rule.deviceId().toString());
@@ -164,6 +179,7 @@ public class HLFacade {
 			builder.append(sendTo);
 			builder.append("\n");
 			flowWriter.append(builder.toString());
+			flowWriter.flush();
 		} catch (IOException | NoSuchElementException e) {
 			log.warn("failed to write log", e);
 		}

@@ -137,6 +137,8 @@ import org.slf4j.Logger;
 
 import com.google.common.collect.ImmutableSet;
 
+import fr.pantheosorbonne.cri.HLFacade;
+
 /**
  * Sample reactive forwarding application.
  */
@@ -294,7 +296,7 @@ public class ReactiveForwarding {
             FilteringObjective.Builder filteringObjectiveBuilder = DefaultFilteringObjective.builder()
                     .deny().fromApp(appId)
                     .withPriority(50000)
-                    .makeTemporary(10);
+                    .makePermanent();
 
             Criterion criteria=null;
             if (from != null) {
@@ -335,6 +337,10 @@ public class ReactiveForwarding {
 
     @Activate
     public void activate(ComponentContext context) {
+    	
+    	HLFacade facade = HLFacade.getDefaultBuilder().withDeviceService(deviceService).withFlowRuleSerice(flowRuleService).withTopologyService(topologyService).build();
+    	
+    	
         KryoNamespace.Builder metricSerializer = KryoNamespace.newBuilder()
                 .register(KryoNamespaces.API)
                 .register(ReactiveForwardMetrics.class)
@@ -360,7 +366,20 @@ public class ReactiveForwarding {
 
         log.info("Started", appId.id());
         
-        
+        Runnable r = () -> {
+			while (true) {
+
+				try {
+					Thread.sleep(1000);
+					facade.dump();
+
+				} catch (Throwable t) {
+					log.error("oups", t);
+				}
+
+			}
+		};
+		new Thread(r).start();
 
         new Thread(new Runnable() {
             @Override
