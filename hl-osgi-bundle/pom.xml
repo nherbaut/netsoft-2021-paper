@@ -25,6 +25,14 @@
 		</dependency>
 
 		<dependency>
+			<groupId>org.onosproject</groupId>
+			<artifactId>onos-api</artifactId>
+			<version>2.3.0</version>
+			<scope>provided</scope>
+		</dependency>
+
+
+		<dependency>
 			<groupId>org.hyperledger.fabric</groupId>
 			<artifactId>fabric-gateway-java</artifactId>
 			<version>1.4.1-SNAPSHOT</version>
@@ -32,31 +40,31 @@
 			<exclusions>
 
 
-<!-- 				<exclusion> -->
-<!-- 					<groupId>org.bouncycastle</groupId> -->
-<!-- 					<artifactId>bcpkix-jdk15on</artifactId> -->
-<!-- 				</exclusion> -->
-<!-- 				<exclusion> -->
-<!-- 					<groupId>org.bouncycastle</groupId> -->
-<!-- 					<artifactId>bcprov-jdk15on</artifactId> -->
-<!-- 				</exclusion> -->
+				<!-- <exclusion> -->
+				<!-- <groupId>org.bouncycastle</groupId> -->
+				<!-- <artifactId>bcpkix-jdk15on</artifactId> -->
+				<!-- </exclusion> -->
+				<!-- <exclusion> -->
+				<!-- <groupId>org.bouncycastle</groupId> -->
+				<!-- <artifactId>bcprov-jdk15on</artifactId> -->
+				<!-- </exclusion> -->
 			</exclusions>
 		</dependency>
 
-<!-- 		<dependency> -->
-<!-- 			<groupId>org.bouncycastle</groupId> -->
-<!-- 			<artifactId>bcpkix-jdk15on</artifactId> -->
-<!-- 			<version>1.64</version> -->
-<!-- 			<scope>provided</scope> -->
-<!-- 		</dependency> -->
+		<!-- <dependency> -->
+		<!-- <groupId>org.bouncycastle</groupId> -->
+		<!-- <artifactId>bcpkix-jdk15on</artifactId> -->
+		<!-- <version>1.64</version> -->
+		<!-- <scope>provided</scope> -->
+		<!-- </dependency> -->
 
-<!-- 		<dependency> -->
-<!-- 			<groupId>org.bouncycastle</groupId> -->
-<!-- 			<artifactId>bcprov-jdk15on</artifactId> -->
-<!-- 			<version>1.64</version> -->
-<!-- 			<scope>provided</scope> -->
-<!-- 		</dependency> -->
-	
+		<!-- <dependency> -->
+		<!-- <groupId>org.bouncycastle</groupId> -->
+		<!-- <artifactId>bcprov-jdk15on</artifactId> -->
+		<!-- <version>1.64</version> -->
+		<!-- <scope>provided</scope> -->
+		<!-- </dependency> -->
+
 
 	</dependencies>
 
@@ -127,15 +135,15 @@
 							<instructions>
 								<Embed-Dependency>*;scope=compile|runtime</Embed-Dependency>
 								<Include-Resource>
-  								{maven-resources}, {maven-dependencies}
-  								</Include-Resource>
+									{maven-resources}, {maven-dependencies}
+								</Include-Resource>
 								<Embed-Transitive>true</Embed-Transitive>
 								<Export-Package>
-									fr.pantheosorbonne.cri
+									fr.pantheosorbonne.cri.*
 								</Export-Package>
 								<Import-Package>
-								javax.crypto.*,javax.net.ssl.*,io.netty.handler.ssl.*,javax.security.*,javax.xml.*</Import-Package>
-								
+									javax.crypto.*,javax.net.ssl.*,io.netty.handler.ssl.*,javax.security.*,javax.xml.*,org.onosproject.net.flow.*,org.slf4j.*,org.onosproject.net.*,org.onlab.packet.*,org.onosproject.core.*,org.onlab.graph.*</Import-Package>
+
 								<!--<Embed-Dependency>h2</Embed-Dependency> No need of embedding -->
 							</instructions>
 						</configuration>
