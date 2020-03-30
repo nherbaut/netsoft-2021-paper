@@ -338,7 +338,11 @@ public class ReactiveForwarding {
     @Activate
     public void activate(ComponentContext context) {
     	
-    	HLFacade facade = HLFacade.getDefaultBuilder().withDeviceService(deviceService).withFlowRuleSerice(flowRuleService).withTopologyService(topologyService).build();
+    	HLFacade facade = HLFacade.getDefaultBuilder()	.withDeviceService(deviceService)//
+    													.withFlowRuleSerice(flowRuleService)//
+    													.withTopologyService(topologyService)//
+    													.withHostService(hostService)//
+    													.build();
     	
     	
         KryoNamespace.Builder metricSerializer = KryoNamespace.newBuilder()

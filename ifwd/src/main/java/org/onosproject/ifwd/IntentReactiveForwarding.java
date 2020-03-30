@@ -130,7 +130,8 @@ public class IntentReactiveForwarding {
 		selector.matchEthType(Ethernet.TYPE_IPV4);
 		packetService.requestPackets(selector.build(), PacketPriority.REACTIVE, appId);
 		HLFacade facade = HLFacade.getDefaultBuilder().withDeviceService(deviceService)
-				.withFlowRuleSerice(flowRuleService).withIntentService(intentService).withTopologyService(topologyService).build();
+				.withFlowRuleSerice(flowRuleService).withIntentService(intentService)
+				.withTopologyService(topologyService).withHostService(hostService).build();
 
 		Runnable r = () -> {
 			while (true) {
