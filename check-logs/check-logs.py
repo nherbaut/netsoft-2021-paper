@@ -99,8 +99,9 @@ class NextDeviceOnPathAbsentException(Exception):
     pass
 
 
-for timestamp in ['1585611274452', '1585611266051']:
-    failed=False
+for timestamp in host_logs.keys():
+    failed=True
+    g = networkx.Graph()
     print("checkt conformance for timestamp %s" % timestamp, end=" ")
     for ts, hosts in [(kk, vv) for kk, vv in flow_logs.items() if kk == timestamp]:
         t, rules = get_mgt_rulesfor_timestamp(ts, mgt_rules)
@@ -153,9 +154,8 @@ for timestamp in ['1585611274452', '1585611266051']:
             except (NextDeviceOnPathAbsentException, DroppedOnPathException) as e:
                 continue
         else:
-
-            failed=True
-
+            failed=False
+        #print(u'\u2713')
     if(not failed):
         print(u'\u2713')
     else:
