@@ -15,6 +15,8 @@ parser.add_argument('--management-commands', '-m', type=str,
 parser.add_argument('--host-logs', '-o', type=str,
                     help='Hosts logs', default="/home/nherbaut/host-logs")
 
+parser.add_argument('--timestamp', type=str, help="timestamp for conformance checking", default="[0-9]+")
+
 args = parser.parse_args()
 
 host_logs = collections.defaultdict(dict)
@@ -22,7 +24,7 @@ with open(args.host_logs) as f:
     lines = f.readlines()
     for i in range(0, len(lines)):
         line = lines[i]
-        match = re.findall("^([0-9]+)\t((?:[0-9]{2}:?){6})\tof:([0-9]+)$", line)
+        match = re.findall("^(%s)\t((?:[0-9]{2}:?){6})\tof:([0-9a-f]+)$" % args.timestamp, line)
         if (len(match) == 0):
             continue
         timestamp, host_mac, device_id = match[0]
@@ -60,23 +62,25 @@ flow_logs = collections.defaultdict(list)
 with open(args.flow_logs, "r") as f:
     for line in f.readlines():
 
-        drop_data = re.findall("([0-9]+)\tof:([0-9]+)\tto:((?:[0-9]{2}:?){6}),from:((?:[0-9]{2}:?){6})\tDROP", line)
+        drop_data = re.findall(
+            "(%s)\tof:([0-9a-f]+)\tto:((?:[0-9]{2}:?){6}),from:((?:[0-9]{2}:?){6})\tDROP" % args.timestamp, line)
         if (drop_data is not None and len(drop_data) > 0):
             drop_data = drop_data[0]
             flow_logs[drop_data[0]].append(DropFlowLog(drop_data[0], drop_data[1], drop_data[2], drop_data[3], "DROP"))
             continue
-        drop_data = re.findall("^([0-9]+)\tof:([0-9]+)\tto:((?:[0-9]{2}:?){6})\tDROP", line)
+        drop_data = re.findall("^(%s)\tof:([0-9a-f]+)\tto:((?:[0-9]{2}:?){6})\tDROP" % args.timestamp, line)
         if (drop_data is not None and len(drop_data) > 0):
             drop_data = drop_data[0]
             flow_logs[drop_data[0]].append(DropFlowLog(drop_data[0], drop_data[1], None, drop_data[2], "DROP"))
             continue
-        drop_data = re.findall("^([0-9]+)\tof:([0-9]+)\tfrom:((?:[0-9]{2}:?){6})\tDROP", line)
+        drop_data = re.findall("^(%s)\tof:([0-9a-f]+)\tfrom:((?:[0-9]{2}:?){6})\tDROP" % args.timestamp, line)
         if (drop_data is not None and len(drop_data) > 0):
             drop_data = drop_data[0]
             flow_logs[drop_data[0]].append(DropFlowLog(drop_data[0], drop_data[1], drop_data[2], None, "DROP"))
             continue
         output_data = re.findall(
-            "^([0-9]+)\tof:([0-9]+)\tto:((?:[0-9]{2}:?){6}),from:((?:[0-9]{2}:?){6})\tOUTPUT:of:([0-9]+)$", line)
+            "^(%s)\tof:([0-9a-f]+)\tto:((?:[0-9]{2}:?){6}),from:((?:[0-9]{2}:?){6})\tOUTPUT:of:([0-9a-f]+)$" % args.timestamp,
+            line)
         if (output_data is not None and len(output_data) > 0):
             output_data = output_data[0]
             flow_logs[output_data[0]].append(
@@ -84,12 +88,15 @@ with open(args.flow_logs, "r") as f:
 
 
 def get_mgt_rulesfor_timestamp(k, mgt_rules):
-    intervals = sorted(zip(mgt_rules.keys(), list(mgt_rules.keys())[1:]), key=lambda x: x[0])
-    try:
-        timestamp = next(x[0] for x in intervals if x[1] > k)
-    except StopIteration:
-        timestamp = intervals[-1][1]
-    return timestamp, mgt_rules[timestamp]
+    command_timestamps = sorted(mgt_rules.keys())
+    prev = command_timestamps[0]
+    for i in sorted(mgt_rules.keys()):
+        if i > k:
+            break
+        else:
+            prev = i
+    return prev, mgt_rules[prev]
+
 
 class DroppedOnPathException(Exception):
     pass
@@ -99,10 +106,10 @@ class NextDeviceOnPathAbsentException(Exception):
     pass
 
 
-for timestamp in host_logs.keys():
-    failed=True
+for timestamp in flow_logs.keys():
+    results = []
     g = networkx.Graph()
-    print("checkt conformance for timestamp %s" % timestamp, end=" ")
+    print("checkt conformance for timestamp %s" % timestamp)
     for ts, hosts in [(kk, vv) for kk, vv in flow_logs.items() if kk == timestamp]:
         t, rules = get_mgt_rulesfor_timestamp(ts, mgt_rules)
         g = networkx.Graph()
@@ -126,14 +133,14 @@ for timestamp in host_logs.keys():
 
             g.add_node(mac, flow=[])
 
-
-
     hosts_mac = sorted([h for h in hosts.keys()])
+    fault_counts = 0
     for host1, host2 in [(aa, bb) for aa in hosts_mac for bb in hosts_mac if aa != bb and aa < bb]:
 
         packet = EthPacket(host1, host2)
-        #print("\tchecking connectivity for %s %s" % (host1, host2), end=" ")
+        #print("\tchecking connectivity for %s %s" % (host1, host2))
         for path in networkx.algorithms.all_simple_paths(g, host1, host2):
+            #print("candidate: %s"%path)
             try:
                 for src, dst in zip(path, path[1:]):
                     for src_flow in g.nodes[src].get("flow", []):
@@ -147,16 +154,22 @@ for timestamp in host_logs.keys():
                     for output_flow in g.edges[(src, dst)]["flow"]:
                         if output_flow.get_next_device(packet.src, packet.dst) == dst:
                             valid_flow_output = True
+                            #print("%s %s ok"%(src,dst))
                             break
                     if not valid_flow_output:
+
                         raise NextDeviceOnPathAbsentException()
                 break
             except (NextDeviceOnPathAbsentException, DroppedOnPathException) as e:
+                #print("%s %s ko" % (src, dst))
+                #print("trying another path")
                 continue
+            break  # success!
         else:
-            failed=False
-        #print(u'\u2713')
-    if(not failed):
-        print(u'\u2713')
-    else:
-        print(u'\u2718 (failed to find a path between %s and %s' % (host1,host2))
+            results.append((host1, host2, False))
+            continue
+        results.append((host1, host2, True))
+
+    #print("%s (%d/%d)" % (timestamp, len([res for _, _, res in results if res]), len(results)))
+    for h1, h2, res in results:
+        print("\t%s %s %s" % (h1, h2, u"\u2713" if res else u"\u2718"))
