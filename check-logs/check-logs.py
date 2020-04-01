@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
+import logging
+import sys
 import collections
 import argparse
 import networkx
 import re
 from flows import *
+
+logging.basicConfig(filename='check-logs.log',level=logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+
 
 parser = argparse.ArgumentParser(description='Conformance checking mgt-orders')
 parser.add_argument('--flow-logs', '-f', type=str,
@@ -15,7 +21,9 @@ parser.add_argument('--management-commands', '-m', type=str,
 parser.add_argument('--host-logs', '-o', type=str,
                     help='Hosts logs', default="/home/nherbaut/host-logs")
 
-parser.add_argument('--timestamp', type=str, help="timestamp for conformance checking", default="[0-9]+")
+parser.add_argument('--timestamp', "-t", type=str, help="timestamp for conformance checking", default="[0-9]+")
+
+parser.add_argument('--verbose', '-v', action='store_true', help="verbose")
 
 args = parser.parse_args()
 
@@ -79,7 +87,7 @@ with open(args.flow_logs, "r") as f:
             flow_logs[drop_data[0]].append(DropFlowLog(drop_data[0], drop_data[1], drop_data[2], None, "DROP"))
             continue
         output_data = re.findall(
-            "^(%s)\tof:([0-9a-f]+)\tto:((?:[0-9]{2}:?){6}),from:((?:[0-9]{2}:?){6})\tOUTPUT:of:([0-9a-f]+)$" % args.timestamp,
+            "^(%s)\tof:([0-9a-f]+)\tto:((?:[0-9a-f]{2}:?){6}),from:((?:[0-9a-f]{2}:?){6})\tOUTPUT:(?:of|mac):([0-9:af]+)$" % args.timestamp,
             line)
         if (output_data is not None and len(output_data) > 0):
             output_data = output_data[0]
@@ -106,12 +114,13 @@ class NextDeviceOnPathAbsentException(Exception):
     pass
 
 
-for timestamp in flow_logs.keys():
+for timestamp in sorted(flow_logs.keys()):
     results = []
+
     g = networkx.Graph()
-    print("checkt conformance for timestamp %s" % timestamp)
+
     for ts, hosts in [(kk, vv) for kk, vv in flow_logs.items() if kk == timestamp]:
-        t, rules = get_mgt_rulesfor_timestamp(ts, mgt_rules)
+
         g = networkx.Graph()
         for log in [vv for vv in hosts if isinstance(vv, OutputFlowLog)]:
             if (log.deviceId, log.output_action) in g.edges:
@@ -125,24 +134,30 @@ for timestamp in flow_logs.keys():
                     continue
             g.add_node(log.deviceId, flow=[log])
 
-    for ts, hosts in [(kk, vv) for kk, vv in host_logs.items() if kk == timestamp]:
-        for mac, device_id in hosts.items():
+    macs = [(kk, vv) for kk, vv in host_logs.items() if kk == timestamp]
+    if (len(macs) == 0):
+        print("no macs avail for hosts, skipping")
+        continue
+    for ts, macs in [(kk, vv) for kk, vv in host_logs.items() if kk == timestamp]:
+        for mac, device_id in macs.items():
             g.add_edge(mac, device_id,
                        flow=[OutputFlowLog(ts, mac, None, None, device_id),
                              OutputFlowLog(ts, device_id, None, None, mac)])
 
             g.add_node(mac, flow=[])
 
-    hosts_mac = sorted([h for h in hosts.keys()])
+    hosts_mac = sorted([h for h in macs.keys()])
     fault_counts = 0
     for host1, host2 in [(aa, bb) for aa in hosts_mac for bb in hosts_mac if aa != bb and aa < bb]:
-
+        trace=""
         packet = EthPacket(host1, host2)
-        #print("\tchecking connectivity for %s %s" % (host1, host2))
+        trace+="\tchecking connectivity for %s %s\n" % (host1, host2)
         for path in networkx.algorithms.all_simple_paths(g, host1, host2):
-            #print("candidate: %s"%path)
+            trace+="\t\tcandidate: %s\n" % path
             try:
                 for src, dst in zip(path, path[1:]):
+                    if src=="0000000000000006" and dst=="000000000000000a" and host1=="00:00:00:00:00:03" and host2=="00:00:00:00:00:12":
+                        print("salut")
                     for src_flow in g.nodes[src].get("flow", []):
                         if src_flow.isDropping(packet):
                             raise DroppedOnPathException()
@@ -151,25 +166,54 @@ for timestamp in flow_logs.keys():
                             raise DroppedOnPathException()
 
                     valid_flow_output = False
+                    logging.debug(str(g.edges[(src, dst)]["flow"]))
                     for output_flow in g.edges[(src, dst)]["flow"]:
                         if output_flow.get_next_device(packet.src, packet.dst) == dst:
                             valid_flow_output = True
-                            #print("%s %s ok"%(src,dst))
+                            trace+="\t\t%s %s ok\n" % (src, dst)
                             break
                     if not valid_flow_output:
-
                         raise NextDeviceOnPathAbsentException()
                 break
             except (NextDeviceOnPathAbsentException, DroppedOnPathException) as e:
-                #print("%s %s ko" % (src, dst))
-                #print("trying another path")
+                trace+="\t\t%s %s ko\n" % (src, dst)
+                trace+="\t\ttrying another path\n"
                 continue
             break  # success!
         else:
             results.append((host1, host2, False))
+            trace += "\t\tno path is valid"
+            logging.info(trace)
             continue
         results.append((host1, host2, True))
 
-    #print("%s (%d/%d)" % (timestamp, len([res for _, _, res in results if res]), len(results)))
-    for h1, h2, res in results:
-        print("\t%s %s %s" % (h1, h2, u"\u2713" if res else u"\u2718"))
+        trace += "\t\tpath is accepted"
+        logging.debug(trace)
+
+
+
+    # print("%s (%d/%d)" % (timestamp, len([res for _, _, res in results if res]), len(results)))
+
+    _, rules = get_mgt_rulesfor_timestamp(timestamp, mgt_rules)
+    all_success = True
+    fault_count = 0
+    if (args.verbose):
+        logging.info("Verifying flows for:\n%s" % str(rules))
+    for h1, h2, can_talk in results:
+        success = True
+
+        if can_talk:
+            if h1 in rules[0] or h2 in rules[0] or (h1, h2) in rules[1] or (h2, h1) in rules[1]:
+                if args.verbose:
+                    logging.warning("\t %s and %s should not communicate \u2718" % (h1, h2))
+                success = False
+        else:
+            if not (h1 in rules[0] or h2 in rules[0] or (h1, h2) in rules[1] or (h2, h1) in rules[1]):
+                if args.verbose:
+                    logging.warning("\t %s and %s should communicate \u2718" % (h1, h2))
+                success = False
+        if not success:
+            fault_count += 1
+            # print("\t%s %s %s" % (h1, h2, u"\u2713" if success else u"\u2718"))
+            all_success = False
+    logging.warning("Conformance at %s : %s \t %f" % (timestamp, u"\u2713" if all_success else u"\u2718", fault_count))

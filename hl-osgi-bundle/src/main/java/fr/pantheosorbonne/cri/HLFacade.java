@@ -12,7 +12,9 @@ import org.onosproject.net.Device;
 import org.onosproject.net.Device.Type;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.Host;
+import org.onosproject.net.PortNumber;
 import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.edge.EdgePortService;
 import org.onosproject.net.flow.FlowEntry;
 import org.onosproject.net.flow.FlowRule;
 import org.onosproject.net.flow.FlowRuleService;
@@ -28,6 +30,7 @@ import org.onosproject.net.topology.TopologyService;
 import org.slf4j.Logger;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.Streams;
 
 public class HLFacade {
 
@@ -39,6 +42,7 @@ public class HLFacade {
 	private DeviceService deviceService;
 	private IntentService intentService;
 	private TopologyService topoService;
+	private EdgePortService edgePortService;
 	private FileWriter hostsWriter;
 	public HostService hostService;;
 
@@ -78,6 +82,11 @@ public class HLFacade {
 			return this;
 		}
 
+		public HLFacadeBuilder withEdgePortService(EdgePortService service) {
+			this.facade.edgePortService = service;
+			return this;
+		}
+
 		public HLFacade build() {
 			if (this.facade.topoService == null || this.facade.deviceService == null
 					|| (this.facade.intentService == null && this.facade.frs == null)) {
@@ -104,21 +113,28 @@ public class HLFacade {
 	}
 
 	public void dump() {
-		long now = System.currentTimeMillis();
-		for (Device d : deviceService.getDevices(Type.SWITCH)) {
-			for (FlowEntry fe : frs.getFlowEntries(d.id())) {
-				writeFlow(fe, now);
-			}
+		try {
+			long now = System.currentTimeMillis();
+			for (Device d : deviceService.getDevices(Type.SWITCH)) {
+				for (FlowEntry fe : frs.getFlowEntries(d.id())) {
+					writeFlow(fe, now);
+				}
 
-		}
-		if (intentService != null) {
-			for (Intent intent : intentService.getIntents()) {
-				writeIntent(intent, now);
 			}
-		}
+			flowWriter.flush();
+			if (intentService != null) {
+				for (Intent intent : intentService.getIntents()) {
+					writeIntent(intent, now);
+				}
+			}
+			intentWriter.flush();
 
-		for (Host h : hostService.getHosts()) {
-			writeHost(h, now);
+			for (Host h : hostService.getHosts()) {
+				writeHost(h, now);
+			}
+			hostsWriter.flush();
+		} catch (IOException e) {
+			log.error("failed to write log", e);
 		}
 
 	}
@@ -136,7 +152,7 @@ public class HLFacade {
 			}
 			sb.append("\n");
 			hostsWriter.write(sb.toString());
-		} catch (IOException  e) {
+		} catch (IOException e) {
 			log.warn("failed to write log", e);
 		}
 
@@ -177,7 +193,7 @@ public class HLFacade {
 				return;
 			}
 
-			Function<OutputInstruction, DeviceId> p = o -> graph.getVertexes().stream()//
+			Function<OutputInstruction, DeviceId> mapToNextDevice = o -> graph.getVertexes().stream()//
 					.peek(v -> writeDebug("available vertex:" + v.toString()))
 					.filter(v -> v.deviceId().equals(rule.deviceId()))//
 					.peek(v -> writeDebug("matching vertex with device id" + v.toString()))
@@ -185,17 +201,35 @@ public class HLFacade {
 							.peek(e -> writeDebug("ports from edge " + e.link().src().port().toString()))
 							.filter(e -> e.link().src().port().equals(o.port()))//
 							.peek(e -> writeDebug("matching ports from edge " + e.link().src().port().toString()))
-							.map(e -> e.dst().deviceId()).peek(d -> writeDebug("matching next device " + d)).findFirst()
-							.orElseThrow())//
+							.map(e -> e.dst().deviceId())//
+							.peek(d -> writeDebug("matching next device " + d))//
+							.findFirst().orElseThrow(() -> {
+								return new NoSuchElementException("failed to find ");
+							}))//
 					.findFirst()//
 					.orElseThrow();
 
 			writeDebug(rule.treatment().allInstructions().stream().map(i -> i.type().toString())
 					.collect(Collectors.toSet()).stream().collect(Collectors.joining(",")) + "\n");
 
-			String sendTo = rule.treatment().immediate().stream()//
-					.filter(t -> t instanceof OutputInstruction)//
-					.map(t -> (OutputInstruction) t).map(p).map(d -> d.toString()).collect(Collectors.joining(","));
+			String sendTo = null;
+			try {
+				// try if the next target is a device
+				sendTo = rule.treatment().immediate().stream()//
+						.filter(t -> t instanceof OutputInstruction)//
+						.map(t -> (OutputInstruction) t).map(mapToNextDevice).map(d -> d.toString())
+						.collect(Collectors.joining(","));
+			} catch (NoSuchElementException nse) {
+				PortNumber pn = rule.treatment().immediate().stream()//
+						.filter(t -> t instanceof OutputInstruction)//
+						.map(t -> ((OutputInstruction) t).port()).findFirst().orElseThrow();
+
+				sendTo = "mac:" + Streams.stream(edgePortService.getEdgePoints(rule.deviceId()))
+						.peek(c -> log.warn(c.port() + " @@ " + c.toString()))//
+						.filter(c -> c.port().name().equals(pn.name())).map(cp -> hostService.getConnectedHosts(cp))
+						.findFirst().orElseThrow().stream().findFirst().orElseThrow().mac().toString();
+
+			}
 
 			if (Strings.isNullOrEmpty(sendTo)) {
 				sendTo = "DROP";
@@ -224,8 +258,7 @@ public class HLFacade {
 
 			if (intent instanceof HostToHostIntent) {
 				var h2h = (HostToHostIntent) intent;
-				builder.append(timestamp);
-				builder.append(intent.appId().name()).append("\t");
+				builder.append(timestamp).append("\t");
 				builder.append(intentService.getIntentState(intent.key())).append("\t");
 				builder.append(h2h.resources().stream().map(Object::toString).collect(Collectors.joining("\t")));
 				intentWriter.write(builder.append("\n").toString());

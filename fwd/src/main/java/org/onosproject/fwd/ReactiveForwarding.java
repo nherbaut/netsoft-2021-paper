@@ -94,6 +94,7 @@ import org.onosproject.net.Link;
 import org.onosproject.net.Path;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.edge.EdgePortService;
 import org.onosproject.net.flow.DefaultTrafficSelector;
 import org.onosproject.net.flow.DefaultTrafficTreatment;
 import org.onosproject.net.flow.FlowEntry;
@@ -193,6 +194,9 @@ public class ReactiveForwarding {
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     protected DeviceService deviceService;
+    
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    protected EdgePortService edgePortService;
 
     private ReactivePacketProcessor processor = new ReactivePacketProcessor();
 
@@ -342,6 +346,7 @@ public class ReactiveForwarding {
     													.withFlowRuleSerice(flowRuleService)//
     													.withTopologyService(topologyService)//
     													.withHostService(hostService)//
+    													.withEdgePortService(edgePortService)
     													.build();
     	
     	
@@ -374,7 +379,8 @@ public class ReactiveForwarding {
 			while (true) {
 
 				try {
-					Thread.sleep(1000);
+					log.warn("host count : " + hostService.getHostCount());
+					Thread.sleep(3000);
 					facade.dump();
 
 				} catch (Throwable t) {

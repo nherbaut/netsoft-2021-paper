@@ -36,6 +36,7 @@ import org.onosproject.net.Host;
 import org.onosproject.net.HostId;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.edge.EdgePortService;
 import org.onosproject.net.flow.DefaultTrafficSelector;
 import org.onosproject.net.flow.DefaultTrafficTreatment;
 import org.onosproject.net.flow.FlowRuleService;
@@ -100,6 +101,9 @@ public class IntentReactiveForwarding {
 
 	@Reference(cardinality = ReferenceCardinality.MANDATORY)
 	protected DeviceService deviceService;
+	
+	@Reference(cardinality = ReferenceCardinality.MANDATORY)
+    protected EdgePortService edgePortService;
 
 	private ReactivePacketProcessor processor = new ReactivePacketProcessor();
 	private ApplicationId appId;
@@ -129,15 +133,20 @@ public class IntentReactiveForwarding {
 		TrafficSelector.Builder selector = DefaultTrafficSelector.builder();
 		selector.matchEthType(Ethernet.TYPE_IPV4);
 		packetService.requestPackets(selector.build(), PacketPriority.REACTIVE, appId);
-		HLFacade facade = HLFacade.getDefaultBuilder().withDeviceService(deviceService)
-				.withFlowRuleSerice(flowRuleService).withIntentService(intentService)
-				.withTopologyService(topologyService).withHostService(hostService).build();
+		HLFacade facade = HLFacade.getDefaultBuilder()//
+				.withDeviceService(deviceService)//
+				.withFlowRuleSerice(flowRuleService)//
+				.withIntentService(intentService)//
+				.withTopologyService(topologyService)//
+				.withHostService(hostService)//
+				.withEdgePortService(edgePortService)
+				.build();
 
 		Runnable r = () -> {
 			while (true) {
 
 				try {
-					Thread.sleep(1000);
+					Thread.sleep(3000);
 					facade.dump();
 
 				} catch (Throwable t) {
@@ -188,7 +197,6 @@ public class IntentReactiveForwarding {
 
 						// remove all blocks that are not on the file anymore
 						Set<HostId> newlyAllowedHosts = blockedHosts.stream()
-								.peek(l -> log.warn("block " + l.toString()))
 								.filter(l -> !lines.contains("block " + l.toString())).collect(Collectors.toSet());
 						newlyAllowedHosts.stream().forEach(h -> logToFile("unblock " + h));
 						blockedHosts.removeAll(newlyAllowedHosts);
@@ -210,7 +218,7 @@ public class IntentReactiveForwarding {
 						.map(i -> (HostToHostIntent) i) //
 						.filter(i -> i.one().equals(hostId) || i.two().equals(hostId)) //
 						.collect(Collectors.toUnmodifiableSet()); //
-				intentsToDiscard.parallelStream().peek(i -> log.warn("removing intent from {} to {}", i.one(), i.two()))
+					intentsToDiscard.parallelStream().peek(i -> log.warn("removing intent from {} to {}", i.one(), i.two()))
 						.forEach(intent -> intentService.withdraw(intent));
 
 			}
