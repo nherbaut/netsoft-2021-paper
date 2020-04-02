@@ -1,5 +1,8 @@
-all: build
+all: build deploy
 
 build:
-	mvn clean package
+	mvn clean compile
+
+deploy:
+	mvn package
 
