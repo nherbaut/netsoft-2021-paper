@@ -2,8 +2,12 @@ package fr.pantheosorbonne.cri;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
+import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.NoSuchElementException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -34,16 +38,12 @@ import com.google.common.base.Strings;
 
 public class HLFacade {
 
-	private FileWriter flowWriter;
-	private FileWriter intentWriter;
-	private FileWriter debugWriter;
-
 	private FlowRuleService frs;
 	private DeviceService deviceService;
 	private IntentService intentService;
 	private TopologyService topoService;
 	private EdgePortService edgePortService;
-	private FileWriter hostsWriter;
+
 	public HostService hostService;;
 
 	public static HLFacadeBuilder getDefaultBuilder() {
@@ -101,45 +101,53 @@ public class HLFacade {
 	private static final Logger log = getLogger(HLFacade.class);
 
 	private HLFacade() {
-		try {
-			flowWriter = new FileWriter("/home/nherbaut/flow-logs", true);
-			intentWriter = new FileWriter("/home/nherbaut/intent-logs", true);
-			hostsWriter = new FileWriter("/home/nherbaut/host-logs", true);
-			debugWriter = new FileWriter("/home/nherbaut/debug-logs", true);
 
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
 	}
 
 	public void dump() {
+
+		long now =System.currentTimeMillis();
+
 		try {
-			long now = System.currentTimeMillis();
+			var nowStr=""+now;
+			String f1=nowStr.substring(0,6);
+			String f2=nowStr.substring(6,9);
+			String f3=nowStr.substring(9);
+			
+			var dst = Paths.get("/home/nherbaut/logs/" , f1,f2,f3);
+			Files.createDirectories(Paths.get("/home/nherbaut/logs/" , f1,f2,f3)); 
+			var flowWriter = new BufferedWriter(new FileWriter(Paths.get(dst.toString() ,"flow.log").toString(), true));
+			var intentWriter = new BufferedWriter(new FileWriter(Paths.get(dst.toString() ,"intent.log").toString(), true));
+			var hostsWriter = new BufferedWriter(new FileWriter(Paths.get(dst.toString() ,"hosts.log").toString(), true));
+			
+
 			for (Device d : deviceService.getDevices(Type.SWITCH)) {
 				for (FlowEntry fe : frs.getFlowEntries(d.id())) {
-					writeFlow(fe, now);
+					writeFlow(fe, now, flowWriter);
 				}
 
 			}
 			flowWriter.flush();
+			flowWriter.close();
 			if (intentService != null) {
 				for (Intent intent : intentService.getIntents()) {
-					writeIntent(intent, now);
+					writeIntent(intent, now, intentWriter);
 				}
 			}
 			intentWriter.flush();
-
+			intentWriter.close();
 			for (Host h : hostService.getHosts()) {
-				writeHost(h, now);
+				writeHost(h, now, hostsWriter);
 			}
 			hostsWriter.flush();
+			hostsWriter.close();
 		} catch (IOException e) {
 			log.error("failed to write log", e);
 		}
 
 	}
 
-	private void writeHost(Host h, long now) {
+	private void writeHost(Host h, long now, Writer w) {
 		try {
 			StringBuilder sb = new StringBuilder();
 			sb.append(now).append("\t");
@@ -151,7 +159,7 @@ public class HLFacade {
 				}
 			}
 			sb.append("\n");
-			hostsWriter.write(sb.toString());
+			w.write(sb.toString());
 		} catch (IOException e) {
 			log.warn("failed to write log", e);
 		}
@@ -168,17 +176,17 @@ public class HLFacade {
 		}
 	}
 
-	private void writeDebug(String s) {
+	private void writeDebug(String s, Writer w) {
 		try {
-			debugWriter.write(s + "\n");
-			debugWriter.flush();
+			w.write(s + "\n");
+			w.flush();
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
 
-	public void writeFlow(FlowRule rule, long timestamp) {
+	public void writeFlow(FlowRule rule, long timestamp, Writer w) {
 		TopologyGraph graph = topoService.getGraph(topoService.currentTopology());
 
 		StringBuilder builder = new StringBuilder();
@@ -194,23 +202,22 @@ public class HLFacade {
 			}
 
 			Function<OutputInstruction, DeviceId> mapToNextDevice = o -> graph.getVertexes().stream()//
-					.peek(v -> writeDebug("available vertex:" + v.toString()))
+					//.peek(v -> writeDebug("available vertex:" + v.toString(), w))
 					.filter(v -> v.deviceId().equals(rule.deviceId()))//
-					.peek(v -> writeDebug("matching vertex with device id" + v.toString()))
+					//.peek(v -> writeDebug("matching vertex with device id" + v.toString(), w))
 					.map(v -> graph.getEdgesFrom(v).stream()//
-							.peek(e -> writeDebug("ports from edge " + e.link().src().port().toString()))
+							//.peek(e -> writeDebug("ports from edge " + e.link().src().port().toString(), w))
 							.filter(e -> e.link().src().port().equals(o.port()))//
-							.peek(e -> writeDebug("matching ports from edge " + e.link().src().port().toString()))
+							//.peek(e -> writeDebug("matching ports from edge " + e.link().src().port().toString(), w))
 							.map(e -> e.dst().deviceId())//
-							.peek(d -> writeDebug("matching next device " + d))//
+							//.peek(d -> writeDebug("matching next device " + d, w))//
 							.findFirst().orElseThrow(() -> {
 								return new NoSuchElementException("failed to find ");
 							}))//
 					.findFirst()//
 					.orElseThrow();
 
-			writeDebug(rule.treatment().allInstructions().stream().map(i -> i.type().toString())
-					.collect(Collectors.toSet()).stream().collect(Collectors.joining(",")) + "\n");
+			//writeDebug(rule.treatment().allInstructions().stream().map(i -> i.type().toString()).collect(Collectors.toSet()).stream().collect(Collectors.joining(",")) + "\n", w);
 
 			String sendTo = null;
 			try {
@@ -224,16 +231,11 @@ public class HLFacade {
 						.filter(t -> t instanceof OutputInstruction)//
 						.map(t -> ((OutputInstruction) t).port()).findFirst().orElseThrow();
 
-//				sendTo = "mac:" + Streams.stream(edgePortService.getEdgePoints(rule.deviceId()))
-//						.peek(c -> log.warn(c.port() + " @@ " + c.toString()))//
-//						.filter(c -> c.port().name().equals(pn.name())).map(cp -> hostService.getConnectedHosts(cp))
-//						.findFirst().orElseThrow().stream().findFirst().orElseThrow().mac().toString();
-				
-				sendTo="mac:";
-				outter:for(ConnectPoint cp : edgePortService.getEdgePoints(rule.deviceId())) {
-					if(cp.port().name().equals(pn.name())) {
-						for(Host h : hostService.getConnectedHosts(cp)) {
-							sendTo+=h.mac().toString();
+				sendTo = "mac:";
+				outter: for (ConnectPoint cp : edgePortService.getEdgePoints(rule.deviceId())) {
+					if (cp.port().name().equals(pn.name())) {
+						for (Host h : hostService.getConnectedHosts(cp)) {
+							sendTo += h.mac().toString();
 							break outter;
 						}
 					}
@@ -255,14 +257,14 @@ public class HLFacade {
 			builder.append("\t");
 			builder.append(sendTo);
 			builder.append("\n");
-			flowWriter.append(builder.toString());
-			flowWriter.flush();
+			w.append(builder.toString());
+			w.flush();
 		} catch (IOException | NoSuchElementException e) {
 			log.warn("failed to write log", e);
 		}
 	}
 
-	public void writeIntent(Intent intent, long timestamp) {
+	public void writeIntent(Intent intent, long timestamp, Writer w) {
 		try {
 			StringBuilder builder = new StringBuilder();
 
@@ -271,7 +273,7 @@ public class HLFacade {
 				builder.append(timestamp).append("\t");
 				builder.append(intentService.getIntentState(intent.key())).append("\t");
 				builder.append(h2h.resources().stream().map(Object::toString).collect(Collectors.joining("\t")));
-				intentWriter.write(builder.append("\n").toString());
+				w.write(builder.append("\n").toString());
 			}
 
 		} catch (IOException e) {
