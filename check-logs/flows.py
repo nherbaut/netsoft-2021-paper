@@ -9,25 +9,27 @@ class FlowLog:
 class EthPacket:
     def __init__(self, src, dst):
 
-        self.src = ":".join(re.findall("([0-9]{2})",src))
-        self.dst = ":".join(re.findall("([0-9]{2})",dst))
+        self.src = ":".join(re.findall("([0-9a-fA-F]{2})",src))
+        self.dst = ":".join(re.findall("([0-9a-fA-F]{2})",dst))
 
 
 class OutputFlowLog(FlowLog):
-    def __init__(self, timestamp, deviceId, dl_src, dl_dst, output_action):
+    def __init__(self, timestamp, deviceId, dl_src, dl_dst, output_action,to_host):
         super().__init__(timestamp, deviceId)
         self.dl_src = dl_src
         self.dl_dst = dl_dst
         self.output_action = output_action
+        self.to_host=to_host
 
     def __str__(self):
         return "%s-%s -> %s" % (self.dl_src,self.dl_dst,self.output_action)
 
     def get_next_device(self,dl_src,dl_dst):
-        if self.dl_src is None and self.dl_src is None:
-            return self.output_action
         if self.dl_src==dl_src and self.dl_dst==dl_dst:
             return self.output_action
+        elif self.dl_src==dl_src and self.dl_dst is None:
+            return self.output_action
+
         else:
             return None
 

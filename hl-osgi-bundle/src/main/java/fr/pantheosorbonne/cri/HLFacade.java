@@ -8,6 +8,7 @@ import java.util.NoSuchElementException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.onosproject.net.ConnectPoint;
 import org.onosproject.net.Device;
 import org.onosproject.net.Device.Type;
 import org.onosproject.net.DeviceId;
@@ -30,7 +31,6 @@ import org.onosproject.net.topology.TopologyService;
 import org.slf4j.Logger;
 
 import com.google.common.base.Strings;
-import com.google.common.collect.Streams;
 
 public class HLFacade {
 
@@ -224,10 +224,20 @@ public class HLFacade {
 						.filter(t -> t instanceof OutputInstruction)//
 						.map(t -> ((OutputInstruction) t).port()).findFirst().orElseThrow();
 
-				sendTo = "mac:" + Streams.stream(edgePortService.getEdgePoints(rule.deviceId()))
-						.peek(c -> log.warn(c.port() + " @@ " + c.toString()))//
-						.filter(c -> c.port().name().equals(pn.name())).map(cp -> hostService.getConnectedHosts(cp))
-						.findFirst().orElseThrow().stream().findFirst().orElseThrow().mac().toString();
+//				sendTo = "mac:" + Streams.stream(edgePortService.getEdgePoints(rule.deviceId()))
+//						.peek(c -> log.warn(c.port() + " @@ " + c.toString()))//
+//						.filter(c -> c.port().name().equals(pn.name())).map(cp -> hostService.getConnectedHosts(cp))
+//						.findFirst().orElseThrow().stream().findFirst().orElseThrow().mac().toString();
+				
+				sendTo="mac:";
+				outter:for(ConnectPoint cp : edgePortService.getEdgePoints(rule.deviceId())) {
+					if(cp.port().name().equals(pn.name())) {
+						for(Host h : hostService.getConnectedHosts(cp)) {
+							sendTo+=h.mac().toString();
+							break outter;
+						}
+					}
+				}
 
 			}
 
