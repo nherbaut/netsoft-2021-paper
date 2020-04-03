@@ -5,7 +5,7 @@ reactive: hl-bundle-build hl-bundle-deploy reactive-build reactive-deploy
 hl-bundle-build:
 	$(MAKE) build -C hl-osgi-bundle
 intent-build:
-	$(MAKE) builc -C ifwd
+	$(MAKE) build -C ifwd
 reactive-build:
 	$(MAKE) build -C fwd2
 

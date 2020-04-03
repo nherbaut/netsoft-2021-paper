@@ -275,8 +275,10 @@ def check_conformance(log_item):
 from concurrent.futures import ThreadPoolExecutor
 
 
+tasks=[]
 
 with ThreadPoolExecutor(max_workers=10) as executor:
     for logs in log_itemps_to_analyse:
-        future = executor.submit(check_conformance, logs)
-        print(future.result())
+        tasks.append(executor.submit(check_conformance, logs))
+    executor.shutdown(wait=True)
+
