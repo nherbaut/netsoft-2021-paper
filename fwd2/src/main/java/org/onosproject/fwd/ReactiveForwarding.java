@@ -380,7 +380,7 @@ public class ReactiveForwarding {
 
 				try {
 					log.warn("host count : " + hostService.getHostCount());
-					Thread.sleep(100);
+					Thread.sleep(500);
 					facade.dump();
 
 				} catch (Throwable t) {

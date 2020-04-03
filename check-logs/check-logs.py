@@ -81,7 +81,7 @@ all_log_items = sorted(list(log_files.items()))
 if args.all:
     log_itemps_to_analyse = all_log_items
 else:
-    log_itemps_to_analyse = [all_log_items[-2]]
+    log_itemps_to_analyse = [all_log_items[-3]]
 
 
 def check_conformance(log_item):
@@ -284,20 +284,23 @@ def check_conformance(log_item):
 from concurrent.futures import ProcessPoolExecutor
 
 tasks = []
+if(len(log_itemps_to_analyse)>1):
+    with ProcessPoolExecutor(max_workers=10) as executor:
+        print("launching %d analysis tasks" % len(log_itemps_to_analyse))
+        for logs in log_itemps_to_analyse:
+            if (args.timestamp is None or args.timestamp == logs[0]):
+                tasks.append(executor.submit(check_conformance, logs))
 
-with ProcessPoolExecutor(max_workers=10) as executor:
-    print("launching %d analysis tasks" % len(log_itemps_to_analyse))
-    for logs in log_itemps_to_analyse:
-        if (args.timestamp is None or args.timestamp == logs[0]):
-            tasks.append(executor.submit(check_conformance, logs))
 
+        while True:
+            done_tasks=len([t for t in tasks if t.done()])
+            if done_tasks==0:
+                break;
+            print("%10d/%10d to go"%(done_tasks,len(tasks)))
+            time.sleep(100)
 
-    while True:
-        done_tasks=len([t for t in tasks if t.done()])
-        if done_tasks==0:
-            break;
-        print("%10d/%10d to go"%(done_tasks,len(tasks)))
-        time.sleep(100)
-
-    for r in sorted([r.result() for r in tasks if r.result() is not None],key=lambda x: x[0]):
-        print(r)
+        for r in sorted([r.result() for r in tasks if r.result() is not None],key=lambda x: x[0]):
+            print(r)
+else:
+    result = check_conformance(log_itemps_to_analyse[0])
+    print( result if result else "N/A")
