@@ -33,7 +33,7 @@ class MyFileSystemEventHandler(PatternMatchingEventHandler):
             with open(src_path, "r") as fin:
                 for line in fin.readlines():
                     if not line.startswith("#"):
-                        to_write = "%ld\t%s\n" % (now, line[:-1])
+                        to_write = "%ld\t%s" % (now, line)
                         fout.write(to_write)
 
 parser = argparse.ArgumentParser(description='Follow management')

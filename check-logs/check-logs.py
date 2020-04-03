@@ -7,7 +7,7 @@ import networkx
 import re
 from flows import *
 import os
-
+import time
 logging.basicConfig(filename='check-logs.log', level=logging.WARNING)
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
@@ -29,7 +29,7 @@ parser.add_argument('--logs-dir', '-l', type=str,
 parser.add_argument('--management-commands', '-m', type=str,
                     help='Management Commands', default="/home/nherbaut/mgt-logs")
 
-parser.add_argument('--timestamp', "-t", type=str, help="timestamp for conformance checking", default="[0-9a-fA-F]+")
+parser.add_argument('--timestamp', "-t", type=str, help="timestamp for conformance checking", default=None)
 
 parser.add_argument('--verbose', '-v', action='store_true', help="verbose")
 
@@ -42,6 +42,11 @@ check_src, check_dst = re.findall(MAC_PAIR_RE, args.check_connectivity)[0]
 
 log_files = {"".join((p[0][1:].split("/")[-3:])): [os.path.join(p[0], ff) for ff in p[2]] for p in
              os.walk(args.logs_dir) if len(p[2]) > 0}
+
+# need to scan all log files for timestamp
+
+if (args.timestamp is not None):
+    args.all = True
 
 
 def should_check_connectivity(src, dst):
@@ -63,8 +68,10 @@ def get_mgt_rulesfor_timestamp(k, mgt_rules):
             prev = i
     return prev, mgt_rules[prev]
 
+
 class DroppedOnPathException(Exception):
     pass
+
 
 class NextDeviceOnPathAbsentException(Exception):
     pass
@@ -85,7 +92,7 @@ def check_conformance(log_item):
         lines = f.readlines()
         for i in range(0, len(lines)):
             line = lines[i]
-            match = re.findall("^(%s)\t((?:[0-9a-fA-F]{2}:?){6})\tof:([0-9a-fA-F]+)$" % args.timestamp, line)
+            match = re.findall("^([0-9]+)\t((?:[0-9a-fA-F]{2}:?){6})\tof:([0-9a-fA-F]+)$", line)
             if (len(match) == 0):
                 continue
             timestamp, host_mac, device_id = match[0]
@@ -96,7 +103,7 @@ def check_conformance(log_item):
 
         for i in range(0, len(lines)):
             line = lines[i]
-            match = re.findall("^([0-9a-fA-F]+)\tUPDATE", line)
+            match = re.findall("^([0-9a-fA-F]+)\tUPDATE$", line)
             if (len(match) == 0):
                 continue
 
@@ -123,27 +130,27 @@ def check_conformance(log_item):
         for line in f.readlines():
 
             drop_data = re.findall(
-                "(%s)\tof:([0-9a-fA-F]+)\tto:((?:[0-9a-fA-F]{2}:?){6}),from:((?:[0-9a-fA-F]{2}:?){6})\tDROP" % args.timestamp,
+                "(%s)\tof:([0-9a-fA-F]+)\tto:((?:[0-9a-fA-F]{2}:?){6}),from:((?:[0-9a-fA-F]{2}:?){6})\tDROP",
                 line)
             if (drop_data is not None and len(drop_data) > 0):
                 drop_data = drop_data[0]
                 flow_logs[drop_data[0]].append(
                     DropFlowLog(drop_data[0], drop_data[1], drop_data[2], drop_data[3], "DROP"))
                 continue
-            drop_data = re.findall("^(%s)\tof:([0-9a-fA-F]+)\tto:((?:[0-9a-fA-F]{2}:?){6})\tDROP" % args.timestamp,
+            drop_data = re.findall("^([0-9]+)\tof:([0-9a-fA-F]+)\tto:((?:[0-9a-fA-F]{2}:?){6})\tDROP",
                                    line)
             if (drop_data is not None and len(drop_data) > 0):
                 drop_data = drop_data[0]
                 flow_logs[drop_data[0]].append(DropFlowLog(drop_data[0], drop_data[1], None, drop_data[2], "DROP"))
                 continue
-            drop_data = re.findall("^(%s)\tof:([0-9a-fA-F]+)\tfrom:((?:[0-9a-fA-F]{2}:?){6})\tDROP" % args.timestamp,
+            drop_data = re.findall("^([0-9]+)\tof:([0-9a-fA-F]+)\tfrom:((?:[0-9a-fA-F]{2}:?){6})\tDROP",
                                    line)
             if (drop_data is not None and len(drop_data) > 0):
                 drop_data = drop_data[0]
                 flow_logs[drop_data[0]].append(DropFlowLog(drop_data[0], drop_data[1], drop_data[2], None, "DROP"))
                 continue
             output_data = re.findall(
-                "^(%s)\tof:([0-9a-fA-F]+)\tto:((?:[0-9a-fA-F]{2}:?){6}),from:((?:[0-9a-fA-F]{2}:?){6})\tOUTPUT:(of|mac):([0-9a-fA-F:af]+)$" % args.timestamp,
+                "^([0-9]+)\tof:([0-9a-fA-F]+)\tto:((?:[0-9a-fA-F]{2}:?){6}),from:((?:[0-9a-fA-F]{2}:?){6})\tOUTPUT:(of|mac):([0-9a-fA-F:af]+)$",
                 line)
             if (output_data is not None and len(output_data) > 0):
                 output_data = output_data[0]
@@ -268,17 +275,29 @@ def check_conformance(log_item):
                 # print("\t%s %s %s" % (h1, h2, u"\u2713" if success else u"\u2718"))
                 all_success = False
         if len(results) > 0:
-            logging.warning("Conformance at %s : %s \t fault_ratio=%3.2f %% \tblocked=%d\tconnected=%d" % (
+            return "Conformance at %s : %s \t fault_ratio=%3.2f %% \tblocked=%d\tconnected=%d" % (
                 timestamp, u"\u2713" if all_success else u"\u2718", 100 * fault_count / len(results),
-                len([r for r in results if not r[2]]), len([r for r in results if r[2]])))
+                len([r for r in results if not r[2]]), len([r for r in results if r[2]]))
+        else:
+            return "nothing to check"
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
+tasks = []
 
-tasks=[]
-
-with ThreadPoolExecutor(max_workers=10) as executor:
+with ProcessPoolExecutor(max_workers=10) as executor:
+    print("launching %d analysis tasks" % len(log_itemps_to_analyse))
     for logs in log_itemps_to_analyse:
-        tasks.append(executor.submit(check_conformance, logs))
-    executor.shutdown(wait=True)
+        if (args.timestamp is None or args.timestamp == logs[0]):
+            tasks.append(executor.submit(check_conformance, logs))
 
+
+    while True:
+        done_tasks=len([t for t in tasks if t.done()])
+        if done_tasks==0:
+            break;
+        print("%10d/%10d to go"%(done_tasks,len(tasks)))
+        time.sleep(100)
+
+    for r in sorted([r.result() for r in tasks if r.result() is not None],key=lambda x: x[0]):
+        print(r)

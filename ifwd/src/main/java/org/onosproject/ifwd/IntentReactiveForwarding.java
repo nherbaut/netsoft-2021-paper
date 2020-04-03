@@ -146,7 +146,7 @@ public class IntentReactiveForwarding {
 			while (true) {
 
 				try {
-					Thread.sleep(3000);
+					Thread.sleep(500);
 					facade.dump();
 
 				} catch (Throwable t) {
@@ -185,8 +185,8 @@ public class IntentReactiveForwarding {
 									if (blockedHostPairs.add(HostId.hostId(items[1]) + "" + HostId.hostId(items[2]))) {
 										logToFile("block from " + HostId.hostId(items[1]) + " to "
 												+ HostId.hostId(items[2]));
-										removeIntentsForHost(HostId.hostId(items[1]));
-										removeIntentsForHost(HostId.hostId(items[2]));
+										removeIntentsForHostPair(HostId.hostId(items[1]),HostId.hostId(items[2]));
+										
 									}
 									break;
 								default:
@@ -200,6 +200,26 @@ public class IntentReactiveForwarding {
 								.filter(l -> !lines.contains("block " + l.toString())).collect(Collectors.toSet());
 						newlyAllowedHosts.stream().forEach(h -> logToFile("unblock " + h));
 						blockedHosts.removeAll(newlyAllowedHosts);
+						
+						Set<String> pairsToRemove = new HashSet<String>();
+						for(String pair : blockedHostPairs) {
+							boolean found=false;
+							String h1=pair.substring(0,22);
+							String h2=pair.substring(22);
+							for(String line : lines) {
+								if(line.equals("block-from-to "+h1+" "+h2)) {
+									found=true;
+									break;
+								}
+							}
+							
+							if(!found) {
+								pairsToRemove.add(pair);
+							}
+							
+						}
+						
+						blockedHostPairs.removeAll(pairsToRemove);
 
 						Thread.sleep(10);
 
@@ -217,6 +237,18 @@ public class IntentReactiveForwarding {
 						.filter(i -> i instanceof HostToHostIntent) //
 						.map(i -> (HostToHostIntent) i) //
 						.filter(i -> i.one().equals(hostId) || i.two().equals(hostId)) //
+						.collect(Collectors.toUnmodifiableSet()); //
+					intentsToDiscard.parallelStream().peek(i -> log.warn("removing intent from {} to {}", i.one(), i.two()))
+						.forEach(intent -> intentService.withdraw(intent));
+
+			}
+			
+			private void removeIntentsForHostPair(HostId src, HostId dst) {
+
+				Set<HostToHostIntent> intentsToDiscard = Streams.stream(intentService.getIntents())
+						.filter(i -> i instanceof HostToHostIntent) //
+						.map(i -> (HostToHostIntent) i) //
+						.filter(i -> i.one().equals(src) || i.two().equals(dst)) //
 						.collect(Collectors.toUnmodifiableSet()); //
 					intentsToDiscard.parallelStream().peek(i -> log.warn("removing intent from {} to {}", i.one(), i.two()))
 						.forEach(intent -> intentService.withdraw(intent));
@@ -264,7 +296,7 @@ public class IntentReactiveForwarding {
 			HostId srcId = HostId.hostId(ethPkt.getSourceMAC());
 			HostId dstId = HostId.hostId(ethPkt.getDestinationMAC());
 
-			if (blockedHosts.contains(srcId)) {
+			if (blockedHosts.contains(srcId) || blockedHosts.contains(dstId)) {
 				drop(context);
 				return;
 			}

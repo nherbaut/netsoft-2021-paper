@@ -9,6 +9,7 @@ from mininet.log import setLogLevel
 from mininet.cli import CLI
 from mininet.topo import *
 from math import floor
+from mininet import term
 
 class SingleSwitchTopo(Topo):
     "Single switch connected to n hosts."
@@ -74,12 +75,14 @@ def simpleTest():
     #ping_all_cmd = "fping -t 10 -l -p 5000 " + " ".join([host.IP() for host in net.hosts])+" > /tmp/%s_logs.txt &" 
     #for host in net.hosts:
     #    host.cmd(ping_all_cmd%host.name)
+    #print(dir(host))
 
-        #print(dir(host))
+    for host in net.hosts:
+      term.makeTerm(host)
 
     while True:
         net.ping(timeout=20)
-        time.sleep(3)
+        time.sleep(6)
 		
     
     net.stop()
