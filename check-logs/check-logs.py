@@ -69,15 +69,18 @@ def run_conformance_multithread(timestamp, management_commands,verbose):
     if (len(log_itemps_to_analyse) > 1):
         with ProcessPoolExecutor(max_workers=10) as executor:
             print("launching %d analysis tasks" % len(log_itemps_to_analyse))
+            counter=0
             for logs in log_itemps_to_analyse:
+                counter+=1
+                print("%d  tasks submitted" % counter, end="\r")
                 if (timestamp is None or timestamp == logs[0]):
-                    tasks.append(executor.submit(check_conformance, logs, management_commands))
+                    tasks.append(executor.submit(check_conformance, logs, management_commands,verbose))
 
             while True:
                 done_tasks = len([t for t in tasks if t.done()])
                 if done_tasks == 0:
                     break;
-                print("%10d/%10d to go" % (done_tasks, len(tasks)))
+                print("%10d/%10d processed" % (done_tasks, len(tasks)),end="\r")
                 time.sleep(1)
 
             for r in sorted([r.result() for r in tasks if r.result() is not None], key=lambda x: x[0]):
