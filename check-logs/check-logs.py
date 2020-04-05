@@ -64,8 +64,6 @@ def intent_baed_connectivity_results(intent_logs_file, host_logs, timestamp):
 
 def check_conformance(log_item, mgt_logs, verbose, use_intent=False):
     timestamp, logs = log_item
-    if timestamp=="1586094549171":
-        print("plop")
     topo_logs_file, host_logs_file, flow_logs_file, intent_logs_file = logs
     host_logs = get_host_logs(host_logs_file)
 
