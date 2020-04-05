@@ -5,6 +5,7 @@
 import time
 
 from mininet.topo import Topo
+from mininet.topolib import TreeTopo
 from mininet.net import Mininet
 from mininet.node import Controller, OVSKernelSwitch, RemoteController
 from mininet.link import TCLink
@@ -83,12 +84,13 @@ def simpleTest():
 
 #    for host in net.hosts:
 #      term.makeTerm(host)
-
-    while True:
-        net.ping(timeout=20)
-        time.sleep(6)
-		
-    
+    try:
+        while True:
+            net.ping(timeout=20)
+            time.sleep(6)
+    except:
+		pass
+    CLI(net)	
     net.stop()
 
 if __name__ == '__main__':

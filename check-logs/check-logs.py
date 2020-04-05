@@ -8,6 +8,13 @@ from log_checker_lib import check_dst, check_src
 from log_checker_lib import MAC_PAIR_RE
 from concurrent.futures import ProcessPoolExecutor
 
+import sys
+
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+
 logging.basicConfig(filename='check-logs.log', level=logging.WARNING)
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
@@ -35,59 +42,91 @@ parser.add_argument("--all", action='store_true', help="check conformance for th
 parser.add_argument("--intent", action='store_true', help="use intents for conformance")
 
 parser.add_argument('--check-connectivity', type=re_type, default="00:00:00:00:00:00 00:00:00:00:00:00")
+
+parser.add_argument('--concurrency', type=int, default=10, help="amont of worker process")
 args = parser.parse_args()
 
 
-def check_conformance(log_item, management_commands,verbose):
+def intent_baed_connectivity_results(intent_logs_file, host_logs, timestamp):
+    hosts_mac = get_hosts_mac(host_logs)
+    results = {h1 + h2: [h1, h2, False] for h1 in hosts_mac for h2 in hosts_mac if h1 != h2}
+    with open(intent_logs_file, "r") as f:
+        for line in f.readlines():
+            match = re.findall(
+                r"%s\tINSTALLED\t((?:[0-9a-fA-F]{2}:?){6})/None\t((?:[0-9a-fA-F]{2}:?){6})/None" % timestamp,
+                line)
+            if (len(match) > 0):
+                src, dst = match[0]
+                results["".join(src + dst)][2] = True
+                results["".join(dst + src)][2] = True
+    return list(results.values())
+
+
+def check_conformance(log_item, management_commands, verbose, use_intent=False):
     timestamp, logs = log_item
     host_logs_file, flow_logs_file, intent_logs_file = logs
     host_logs = get_host_logs(host_logs_file)
-    mgt_rules = get_mgt_logs(management_commands)
-    flow_logs = get_flow_logs(flow_logs_file)
-    timestamp = list(flow_logs.keys())[0]
-    g = generate_flow_graph(flow_logs, timestamp)
 
-    add_host_graph_nodes(g, host_logs, timestamp)
+    mgt_logs = get_mgt_logs(management_commands)
+    mgt_rules = get_mgt_rules_for_timestamp(timestamp, mgt_logs)
 
-    macs = [(kk, vv) for kk, vv in host_logs.items() if kk == timestamp]
-    if (len(macs) == 0):
-        print("no log for this timestamp %s, skipping" % timestamp)
-        return
+    if (not use_intent):
+        connectivity_triples = flow_based_connectivity_results(flow_logs_file, host_logs, timestamp)
     else:
-        macs = macs[0][1]
+        connectivity_triples = intent_baed_connectivity_results(intent_logs_file, host_logs, timestamp)
 
-    hosts_mac = sorted([h for h in macs.keys()])
+    security_breach, connectivity_breach = generate_conformance_results(connectivity_triples, mgt_rules, verbose)
+
+    fault_ratio = 100 * (security_breach + connectivity_breach) / len(connectivity_triples)
+
+    # return conformance_results_as_str(all_success, fault_count, connectivity_triples, timestamp)
+    return [timestamp, "%2.2f%%"%fault_ratio, security_breach, connectivity_breach , len([c for c in connectivity_triples if c[2]]),len([c for c in connectivity_triples if not c[2]])]
+
+
+def flow_based_connectivity_results(flow_logs_file, host_logs, timestamp):
+    flow_logs = get_flow_logs(flow_logs_file)
+    g = generate_flow_graph(flow_logs, timestamp)
+    add_host_graph_nodes(g, host_logs, timestamp)
+    hosts_mac = get_hosts_mac(host_logs)
     results = generate_connectivity_from_flow(g, hosts_mac)
-    mgt_rules = get_mgt_rules_for_timestamp(timestamp, mgt_rules)
-    all_success, fault_count = generate_conformance_results(results, mgt_rules,verbose)
-
-    return display_conformance_results(all_success, fault_count, results, timestamp)
+    return results
 
 
-def run_conformance_multithread(timestamp, management_commands,verbose):
+def get_hosts_mac(host_logs):
+    return list(list(host_logs.items())[0][1].keys())
+
+
+def run_conformance_multithread(timestamp, management_commands, verbose, use_intent,concurrency):
     tasks = []
     if (len(log_itemps_to_analyse) > 1):
-        with ProcessPoolExecutor(max_workers=10) as executor:
-            print("launching %d analysis tasks" % len(log_itemps_to_analyse))
-            counter=0
+        with ProcessPoolExecutor(max_workers=concurrency) as executor:
+            eprint("launching %d analysis tasks" % len(log_itemps_to_analyse))
+            counter = 0
             for logs in log_itemps_to_analyse:
-                counter+=1
-                print("%d  tasks submitted" % counter, end="\r")
+                counter += 1
+                eprint("%d  tasks submitted" % counter, end="\r")
                 if (timestamp is None or timestamp == logs[0]):
-                    tasks.append(executor.submit(check_conformance, logs, management_commands,verbose))
+                    tasks.append(executor.submit(check_conformance, logs, management_commands, verbose, use_intent))
 
             while True:
                 done_tasks = len([t for t in tasks if t.done()])
-                if done_tasks == 0:
+                if done_tasks == len(tasks):
                     break;
-                print("%10d/%10d processed" % (done_tasks, len(tasks)),end="\r")
+                eprint("%10d/%10d processed" % (done_tasks, len(tasks)), end="\r")
                 time.sleep(1)
 
-            for r in sorted([r.result() for r in tasks if r.result() is not None], key=lambda x: x[0]):
-                print(r)
+            sorted_resulsts=sorted([r.result() for r in tasks if r.result() is not None], key=lambda x: x[0])
+            begining_of_time=int(sorted_resulsts[0][0])
+            for i in range(0,len(sorted_resulsts)):
+                sorted_resulsts[i][0]=(int(sorted_resulsts[i][0])-begining_of_time)/1000
+            for r in sorted_resulsts:
+                print("\t".join([str(rr) for rr in r]))
+
+
     else:
-        result = check_conformance(log_itemps_to_analyse[0], management_commands,verbose)
-        print(result if result else "N/A")
+        result = check_conformance(log_itemps_to_analyse[0], management_commands, verbose, use_intent)
+        print("\t".join([str(rr) for rr in result]))
+
 
 
 if __name__ == "__main__":
@@ -105,9 +144,9 @@ if __name__ == "__main__":
     all_log_items = sorted(list(log_files.items()))
     if args.all:
         # scan everything
-        log_itemps_to_analyse = all_log_items
+        log_itemps_to_analyse = all_log_items[-50: ]
     else:
         # scan a recent log (-3, to make sure we are not reading a file while Onos writes it)
         log_itemps_to_analyse = [all_log_items[-3]]
 
-    run_conformance_multithread(args.timestamp, args.management_commands,args.verbose)
+    run_conformance_multithread(args.timestamp, args.management_commands, args.verbose, args.intent,args.concurrency)

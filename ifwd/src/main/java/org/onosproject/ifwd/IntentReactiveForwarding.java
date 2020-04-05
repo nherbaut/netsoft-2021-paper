@@ -146,7 +146,7 @@ public class IntentReactiveForwarding {
 			while (true) {
 
 				try {
-					Thread.sleep(500);
+					Thread.sleep(3000);
 					facade.dump();
 
 				} catch (Throwable t) {

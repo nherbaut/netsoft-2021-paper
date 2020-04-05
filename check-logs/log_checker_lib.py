@@ -7,8 +7,8 @@ import networkx
 
 from flows import DropFlowLog, OutputFlowLog, EthPacket
 
-check_src="00:00:00:00:00:00"
-check_dst="00:00:00:00:00:00"
+check_src = "00:00:00:00:00:00"
+check_dst = "00:00:00:00:00:00"
 
 
 def get_flow_logs(flow_logs_file):
@@ -109,7 +109,7 @@ def generate_flow_graph(flow_logs, timestamp):
     return g
 
 
-def add_host_graph_nodes(g, host_logs,  timestamp):
+def add_host_graph_nodes(g, host_logs, timestamp):
     for ts, macs in [(kk, vv) for kk, vv in host_logs.items() if kk == timestamp]:
         for mac, device_id in macs.items():
             g.add_edge(mac, device_id, flow=[OutputFlowLog(timestamp, device_id, mac, None, device_id, False)])
@@ -125,7 +125,8 @@ def generate_connectivity_from_flow(g, hosts_mac):
         trace = ""
         packet = EthPacket(host1, host2)
         trace += "\tchecking connectivity for %s %s\n" % (host1, host2)
-        for path in sorted(networkx.algorithms.all_simple_paths(g, host1, host2), key=lambda x: len(x)):
+        for path in networkx.algorithms.shortest_simple_paths(g, host1, host2):
+
             trace += "\t\tcandidate: %s\n" % path
             try:
                 for src, dst in zip(path, path[1:]):
@@ -153,6 +154,7 @@ def generate_connectivity_from_flow(g, hosts_mac):
             except (NextDeviceOnPathAbsentException, DroppedOnPathException) as e:
                 trace += "\t\t%s %s ko\n" % (src, dst)
                 trace += "\t\ttrying another path\n"
+                print(" Nope ]]]]]] %s" % path)
                 continue
             break  # success!
         else:
@@ -167,30 +169,31 @@ def generate_connectivity_from_flow(g, hosts_mac):
     return results
 
 
-def generate_conformance_results(results, rules,verbose=False):
-    all_success = True
-    fault_count = 0
+def generate_conformance_results(results, rules, verbose=False):
+
+
+    security_breach = 0
+    connectivity_breach = 0
     for h1, h2, can_talk in results:
-        success = True
+
 
         if can_talk:
             if h1 in rules[0] or h2 in rules[0] or (h1, h2) in rules[1] or (h2, h1) in rules[1]:
                 if verbose:
                     logging.warning("\t %s and %s should not communicate \u2718" % (h1, h2))
-                success = False
+
+                security_breach += 1
         else:
             if not (h1 in rules[0] or h2 in rules[0] or (h1, h2) in rules[1] or (h2, h1) in rules[1]):
                 if verbose:
                     logging.warning("\t %s and %s should communicate \u2718" % (h1, h2))
-                success = False
-        if not success:
-            fault_count += 1
-            # print("\t%s %s %s" % (h1, h2, u"\u2713" if success else u"\u2718"))
-            all_success = False
-    return all_success, fault_count
+
+                connectivity_breach += 1
+
+    return security_breach, connectivity_breach
 
 
-def display_conformance_results(all_success, fault_count, results, timestamp):
+def conformance_results_as_str(all_success, fault_count, results, timestamp):
     if len(results) > 0:
         return "Conformance at %s : %s \t fault_ratio=%3.2f %% \tblocked=%d\tconnected=%d" % (
             timestamp, u"\u2713" if all_success else u"\u2718", 100 * fault_count / len(results),

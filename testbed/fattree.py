@@ -1,96 +1,119 @@
-#!/usr/bin/python
-
-from fattree import FatTree
-
-import time
-
 from mininet.topo import Topo
-from mininet.net import Mininet
-from mininet.node import Controller, OVSKernelSwitch, RemoteController
-from mininet.link import TCLink
-from mininet.util import dumpNodeConnections
-from mininet.log import setLogLevel
-from mininet.cli import CLI
-from mininet.topo import *
-from math import floor
-from mininet import term
+import logging
+import os
 
+logging.basicConfig(filename='./fattree.log', level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
-class SingleSwitchTopo(Topo):
-    "Single switch connected to n hosts."
+class FatTree( Topo ):
+  
+    CoreSwitchList = []
+    AggSwitchList = []
+    EdgeSwitchList = []
+    HostList = []
+ 
+    def __init__( self, k):
+        " Create Fat Tree topo."
+        self.pod = k
+        self.iCoreLayerSwitch = (k/2)**2
+        self.iAggLayerSwitch = k*k/2
+        self.iEdgeLayerSwitch = k*k/2
+        self.density = k/2
+        self.iHost = self.iEdgeLayerSwitch * self.density
+        
+        self.bw_c2a = 0.2
+        self.bw_a2e = 0.1
+        self.bw_h2a = 0.05
 
-    def build(self, n=1):
-        hosts = []
-        switches = []
-        for h in range(0, 12):
-            host = self.addHost('h%s' % (h + 1), mac='00:00:00:00:00:%02d' % (h + 1))
-            hosts.append(host)
+        # Init Topo
+        Topo.__init__(self)
+  
+        self.createTopo()
+        logger.debug("Finished topology creation!")
 
-        for s in range(0, 10):
-            switch = self.addSwitch('s%s' % (s + 1))
-            switches.append(switch)
+        self.createLink( bw_c2a=self.bw_c2a, 
+                         bw_a2e=self.bw_a2e, 
+                         bw_h2a=self.bw_h2a)
+        logger.debug("Finished adding links!")
 
-        # access
-        for h in range(0, 12):
-            self.addLink(switches[h / 3], hosts[h])
+    #    self.set_ovs_protocol_13()
+    #    logger.debug("OF is set to version 1.3!")  
+    
+    def createTopo(self):
+        self.createCoreLayerSwitch(self.iCoreLayerSwitch)
+        self.createAggLayerSwitch(self.iAggLayerSwitch)
+        self.createEdgeLayerSwitch(self.iEdgeLayerSwitch)
+        self.createHost(self.iHost)
 
-        self.addLink(switches[0], switches[4])
-        self.addLink(switches[0], switches[5])
-        self.addLink(switches[1], switches[4])
-        self.addLink(switches[1], switches[5])
-        self.addLink(switches[2], switches[6])
-        self.addLink(switches[2], switches[7])
-        self.addLink(switches[3], switches[6])
-        self.addLink(switches[4], switches[7])
+    """
+    Create Switch and Host
+    """
 
-        # aggregation
-        self.addLink(switches[4], switches[5])
-        self.addLink(switches[4], switches[8])
-        self.addLink(switches[4], switches[9])
+    def _addSwitch(self, number, level, switch_list):
+        for x in xrange(1, number+1):
+            PREFIX = str(level) + "00"
+            if x >= int(10):
+                PREFIX = str(level) + "0"
+            switch_list.append(self.addSwitch('s' + PREFIX + str(x)))
 
-        self.addLink(switches[5], switches[4])
-        self.addLink(switches[5], switches[8])
-        self.addLink(switches[5], switches[9])
+    def createCoreLayerSwitch(self, NUMBER):
+        logger.debug("Create Core Layer")
+        self._addSwitch(NUMBER, 1, self.CoreSwitchList)
 
-        self.addLink(switches[6], switches[7])
-        self.addLink(switches[6], switches[8])
-        self.addLink(switches[6], switches[9])
+    def createAggLayerSwitch(self, NUMBER):
+        logger.debug("Create Agg Layer")
+        self._addSwitch(NUMBER, 2, self.AggSwitchList)
 
-        self.addLink(switches[7], switches[6])
-        self.addLink(switches[7], switches[8])
-        self.addLink(switches[7], switches[9])
+    def createEdgeLayerSwitch(self, NUMBER):
+        logger.debug("Create Edge Layer")
+        self._addSwitch(NUMBER, 3, self.EdgeSwitchList)
 
-        # core
-        self.addLink(switches[8], switches[9])
+    @classmethod
+    def int_to_mac(cls,i):
+        return ":".join([a+b for a,b in zip( *[iter(hex(i)[2:].rjust(12,"0"))]*2)])
 
+    def createHost(self, NUMBER):
+        logger.debug("Create Host")
+        for x in xrange(1, NUMBER+1):
+            PREFIX = "h00"
+            if x >= int(10):
+                PREFIX = "h0"
+            elif x >= int(100):
+                PREFIX = "h"
+            self.HostList.append(self.addHost(PREFIX + str(x),mac=FatTree.int_to_mac(x)))
 
-def simpleTest():
-    "Create and test a simple network"
-    topo = FatTree(6)
-    net = Mininet(topo, controller=RemoteController, link=TCLink)
-    net.start()
-    print
-    "Dumping host connections"
-    dumpNodeConnections(net.hosts)
-    print
-    "Testing network connectivity"
+    """
+    Add Link
+    """
+    def createLink(self, bw_c2a=0.2, bw_a2e=0.1, bw_h2a=0.5):
+        logger.debug("Add link Core to Agg.")
+        end = self.pod/2
+        for x in xrange(0, self.iAggLayerSwitch, end):
+            for i in xrange(0, end):
+                for j in xrange(0, end):
+                    linkopts = dict(bw=bw_c2a) 
+                    self.addLink(
+                        self.CoreSwitchList[i*end+j],
+                        self.AggSwitchList[x+i],
+                        **linkopts)
 
-    # ping_all_cmd = "fping -t 10 -l -p 5000 " + " ".join([host.IP() for host in net.hosts])+" > /tmp/%s_logs.txt &"
-    # for host in net.hosts:
-    #    host.cmd(ping_all_cmd%host.name)
-    # print(dir(host))
+        logger.debug("Add link Agg to Edge.")
+        for x in xrange(0, self.iAggLayerSwitch, end):
+            for i in xrange(0, end):
+                for j in xrange(0, end):
+                    linkopts = dict(bw=bw_a2e) 
+                    self.addLink(
+                        self.AggSwitchList[x+i], self.EdgeSwitchList[x+j],
+                        **linkopts)
 
-    #    for host in net.hosts:
-    #      term.makeTerm(host)
+        logger.debug("Add link Edge to Host.")
+        for x in xrange(0, self.iEdgeLayerSwitch):
+            for i in xrange(0, self.density):
+                linkopts = dict(bw=bw_h2a) 
+                self.addLink(
+                    self.EdgeSwitchList[x],
+                    self.HostList[self.density * x + i],
+                    **linkopts)
+        
+topos = { 'fattree' : ( lambda k : FatTree(k)) }
 
-    while True:
-        net.ping(timeout=20)
-        time.sleep(6)
-
-    net.stop()
-
-
-if __name__ == '__main__':
-    # Tell mininet to print useful information
-    setLogLevel('info')
-    simpleTest()
