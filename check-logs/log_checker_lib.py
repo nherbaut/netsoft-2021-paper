@@ -247,7 +247,6 @@ def get_mgt_rules_for_timestamp(k, mgt_rules):
         else:
             prev = i
     else:
-        print("no new policy after log")
         return prev, mgt_rules[prev]
     return prev, mgt_rules[prev]
 

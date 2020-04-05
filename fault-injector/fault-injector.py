@@ -8,9 +8,10 @@ import apscheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 import time
 
-
 import datetime
 import argparse
+
+changes = 0
 
 parser = argparse.ArgumentParser(description='Conformance checking mgt-orders')
 
@@ -21,17 +22,27 @@ parser.add_argument('--la', '-l', type=int,
 
 args = parser.parse_args()
 
-
 np.random.seed(args.seed)
 
-l=args.la
+begining_of_time = time.time()
 
-hosts = {h["id"]: True if np.random.rand()>0.99 else False for h in
+l = args.la
+
+hosts = {h["id"]: True if np.random.rand() > 0.99 else False for h in
          requests.get("http://127.0.0.1:8181/onos/v1/hosts", auth=HTTPBasicAuth('onos', 'rocks')).json()[
              "hosts"]}
 sched = BlockingScheduler()
 
-now=datetime.datetime.now()
+now = datetime.datetime.now()
+
+
+class changes:
+    pass
+
+
+change = changes()
+change.count = 0
+
 
 def write_rules():
     with open("/home/nherbaut/intent.txt", "w") as f:
@@ -39,20 +50,25 @@ def write_rules():
             if hosts[k]:
                 f.write("block %s\n" % k)
 
-def poisson_event( sched=None ):
 
-    k=np.random.choice(list(hosts.keys()))
+def show_changes(change=None):
+    print("%f\t%d" % (time.time() - begining_of_time, change.count))
 
-    hosts[k]=not hosts[k]
-    print("%02.2f\t%d" % ((datetime.datetime.now()-now).total_seconds(),len([1 for k,v in hosts.items() if v])))
+
+def poisson_event(sched=None,change=None):
+    k = np.random.choice(list(hosts.keys()))
+
+    hosts[k] = not hosts[k]
+    # print("%02.2f\t%d" % ((datetime.datetime.now()-now).total_seconds(),len([1 for k,v in hosts.items() if v])))
     write_rules()
-    sched.add_job(poisson_event, trigger='date', run_date=datetime.datetime.now() + datetime.timedelta(seconds=np.random.poisson(l)),
-                  kwargs={"sched": sched})
+    change.count += 1
+    sched.add_job(poisson_event, trigger='date',
+                  run_date=datetime.datetime.now() + datetime.timedelta(seconds=np.random.poisson(l)),
+                  kwargs={"sched": sched, "change": change})
 
 
-
-poisson_event(sched)
-
+poisson_event(sched, change)
+sched.add_job(show_changes, trigger='interval', seconds=1,kwargs={"change": change})
 
 sched.start()
 

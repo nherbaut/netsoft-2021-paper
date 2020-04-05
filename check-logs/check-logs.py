@@ -41,6 +41,8 @@ parser.add_argument("--all", action='store_true', help="check conformance for th
 
 parser.add_argument("--intent", action='store_true', help="use intents for conformance")
 
+parser.add_argument("--cache", action='store_true', help="pre-compute and cache topology paths", default=False)
+
 parser.add_argument('--check-connectivity', type=re_type, default="00:00:00:00:00:00 00:00:00:00:00:00")
 
 parser.add_argument('--concurrency', type=int, default=10, help="amont of worker process")
@@ -63,25 +65,28 @@ def intent_baed_connectivity_results(intent_logs_file, host_logs, timestamp):
 
 
 def check_conformance(log_item, mgt_logs, verbose, use_intent=False):
-    timestamp, logs = log_item
-    topo_logs_file, host_logs_file, flow_logs_file, intent_logs_file = logs
-    host_logs = get_host_logs(host_logs_file)
+    try:
+        timestamp, logs = log_item
+        topo_logs_file, host_logs_file, flow_logs_file, intent_logs_file = logs
+        host_logs = get_host_logs(host_logs_file)
 
 
-    mgt_instant, mgt_rules = get_mgt_rules_for_timestamp(timestamp, mgt_logs)
+        mgt_instant, mgt_rules = get_mgt_rules_for_timestamp(timestamp, mgt_logs)
 
-    if (not use_intent):
-        connectivity_triples = flow_based_connectivity_results(flow_logs_file, host_logs, timestamp)
-    else:
-        connectivity_triples = intent_baed_connectivity_results(intent_logs_file, host_logs, timestamp)
+        if (not use_intent):
+            connectivity_triples = flow_based_connectivity_results(flow_logs_file, host_logs, timestamp)
+        else:
+            connectivity_triples = intent_baed_connectivity_results(intent_logs_file, host_logs, timestamp)
 
-    security_breach, connectivity_breach = generate_conformance_results(connectivity_triples, mgt_rules, verbose)
+        security_breach, connectivity_breach = generate_conformance_results(connectivity_triples, mgt_rules, verbose)
 
-    fault_ratio = 100 * (security_breach + connectivity_breach) / len(connectivity_triples)
+        fault_ratio = 100 * (security_breach + connectivity_breach) / len(connectivity_triples)
 
-    # return conformance_results_as_str(all_success, fault_count, connectivity_triples, timestamp)
-    return [timestamp, "%2.2f%%" % fault_ratio, security_breach, connectivity_breach,
-            len([c for c in connectivity_triples if c[2]]), len([c for c in connectivity_triples if not c[2]])]
+        # return conformance_results_as_str(all_success, fault_count, connectivity_triples, timestamp)
+        return [timestamp, "%2.2f" % fault_ratio, security_breach, connectivity_breach,
+                len([c for c in connectivity_triples if c[2]]), len([c for c in connectivity_triples if not c[2]])]
+    except:
+        return [timestamp]
 
 
 def flow_based_connectivity_results(flow_logs_file, host_logs, timestamp):
@@ -137,7 +142,7 @@ def run_conformance_multithread(timestamp, mgt_logs, verbose, use_intent, concur
 
 
     else:
-        result = check_conformance(log_itemps_to_analyse[0], management_commands, verbose, use_intent)
+        result = check_conformance(log_itemps_to_analyse[0], mgt_logs, verbose, use_intent)
         print("\t".join([str(rr) for rr in result]))
 
 
@@ -177,8 +182,10 @@ if __name__ == "__main__":
         args.all = True
 
     all_log_items = sorted(list(log_files.items()))
-    if not args.intent:
+    if not args.intent and args.cache:
+        eprint("preparing your cache")
         init_path_cache(all_log_items[0])
+        eprint("preparing your cache done")
 
     if args.all:
         # scan everything
