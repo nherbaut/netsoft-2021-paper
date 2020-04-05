@@ -62,13 +62,15 @@ def intent_baed_connectivity_results(intent_logs_file, host_logs, timestamp):
     return list(results.values())
 
 
-def check_conformance(log_item, management_commands, verbose, use_intent=False):
+def check_conformance(log_item, mgt_logs, verbose, use_intent=False):
     timestamp, logs = log_item
-    host_logs_file, flow_logs_file, intent_logs_file = logs
+    if timestamp=="1586094549171":
+        print("plop")
+    topo_logs_file, host_logs_file, flow_logs_file, intent_logs_file = logs
     host_logs = get_host_logs(host_logs_file)
 
-    mgt_logs = get_mgt_logs(management_commands)
-    mgt_rules = get_mgt_rules_for_timestamp(timestamp, mgt_logs)
+
+    mgt_instant, mgt_rules = get_mgt_rules_for_timestamp(timestamp, mgt_logs)
 
     if (not use_intent):
         connectivity_triples = flow_based_connectivity_results(flow_logs_file, host_logs, timestamp)
@@ -80,7 +82,8 @@ def check_conformance(log_item, management_commands, verbose, use_intent=False):
     fault_ratio = 100 * (security_breach + connectivity_breach) / len(connectivity_triples)
 
     # return conformance_results_as_str(all_success, fault_count, connectivity_triples, timestamp)
-    return [timestamp, "%2.2f%%"%fault_ratio, security_breach, connectivity_breach , len([c for c in connectivity_triples if c[2]]),len([c for c in connectivity_triples if not c[2]])]
+    return [timestamp, "%2.2f%%" % fault_ratio, security_breach, connectivity_breach,
+            len([c for c in connectivity_triples if c[2]]), len([c for c in connectivity_triples if not c[2]])]
 
 
 def flow_based_connectivity_results(flow_logs_file, host_logs, timestamp):
@@ -96,7 +99,14 @@ def get_hosts_mac(host_logs):
     return list(list(host_logs.items())[0][1].keys())
 
 
-def run_conformance_multithread(timestamp, management_commands, verbose, use_intent,concurrency):
+def run_confrmance_monothread(timestamp, mgt_logs, verbose, use_intent, concurrency):
+
+    for log_item_to_analyse in log_itemps_to_analyse:
+        result = check_conformance(log_item_to_analyse, mgt_logs, verbose, use_intent)
+        print("\t".join([str(rr) for rr in result]))
+
+
+def run_conformance_multithread(timestamp, mgt_logs, verbose, use_intent, concurrency):
     tasks = []
     if (len(log_itemps_to_analyse) > 1):
         with ProcessPoolExecutor(max_workers=concurrency) as executor:
@@ -106,19 +116,24 @@ def run_conformance_multithread(timestamp, management_commands, verbose, use_int
                 counter += 1
                 eprint("%d  tasks submitted" % counter, end="\r")
                 if (timestamp is None or timestamp == logs[0]):
-                    tasks.append(executor.submit(check_conformance, logs, management_commands, verbose, use_intent))
+                    tasks.append(executor.submit(check_conformance, logs, mgt_logs, verbose, use_intent))
 
+            '''
             while True:
                 done_tasks = len([t for t in tasks if t.done()])
                 if done_tasks == len(tasks):
                     break;
                 eprint("%10d/%10d processed" % (done_tasks, len(tasks)), end="\r")
                 time.sleep(1)
+            '''
 
-            sorted_resulsts=sorted([r.result() for r in tasks if r.result() is not None], key=lambda x: x[0])
-            begining_of_time=int(sorted_resulsts[0][0])
-            for i in range(0,len(sorted_resulsts)):
-                sorted_resulsts[i][0]=(int(sorted_resulsts[i][0])-begining_of_time)/1000
+            executor.shutdown(wait=True)
+
+            sorted_resulsts = sorted([r.result() for r in tasks if r.result() is not None], key=lambda x: x[0])
+            begining_of_time = int(sorted_resulsts[0][0])
+            for i in range(0, len(sorted_resulsts)):
+                sorted_resulsts[i].insert(1,(int(sorted_resulsts[i][0]) - begining_of_time) / 1000)
+
             for r in sorted_resulsts:
                 print("\t".join([str(rr) for rr in r]))
 
@@ -126,6 +141,28 @@ def run_conformance_multithread(timestamp, management_commands, verbose, use_int
     else:
         result = check_conformance(log_itemps_to_analyse[0], management_commands, verbose, use_intent)
         print("\t".join([str(rr) for rr in result]))
+
+
+
+def init_path_cache(log):
+    topo_logs_file,host_logs_file, flow_logs_file, intent_logs_file = log[1]
+
+    hosts=set()
+
+    g=nx.Graph()
+    with open(topo_logs_file) as f:
+        for line in f.readlines():
+            src,dst=line[:-1].split("\t")
+            g.add_edge(src[3:],dst[3:])
+    with open(host_logs_file) as f:
+        for line in f.readlines():
+            ts,src,dst=line[:-1].split("\t")
+            g.add_edge(src,dst[3:])
+            hosts.add(src)
+
+    for host1, host2 in [(aa, bb) for aa in hosts for bb in hosts if aa != bb]:
+        cached_all_simple_path(g,host1,host2)
+
 
 
 
@@ -142,11 +179,22 @@ if __name__ == "__main__":
         args.all = True
 
     all_log_items = sorted(list(log_files.items()))
+    if not args.intent:
+        init_path_cache(all_log_items[0])
+
     if args.all:
         # scan everything
-        log_itemps_to_analyse = all_log_items[-50: ]
+        if args.timestamp is None:
+            log_itemps_to_analyse = all_log_items[:-3]
+        else:
+            log_itemps_to_analyse = [l for l in all_log_items if l[0]==args.timestamp]
     else:
         # scan a recent log (-3, to make sure we are not reading a file while Onos writes it)
-        log_itemps_to_analyse = [all_log_items[-3]]
+        log_itemps_to_analyse = [all_log_items[-5]]
 
-    run_conformance_multithread(args.timestamp, args.management_commands, args.verbose, args.intent,args.concurrency)
+    mgt_logs = get_mgt_logs(args.management_commands)
+    if(args.concurrency>1):
+        run_conformance_multithread(args.timestamp, mgt_logs, args.verbose, args.intent, args.concurrency)
+    else:
+        run_confrmance_monothread(args.timestamp, mgt_logs, args.verbose, args.intent,
+                                    args.concurrency)

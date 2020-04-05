@@ -137,6 +137,7 @@ import org.osgi.service.component.annotations.ReferenceCardinality;
 import org.slf4j.Logger;
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 
 import fr.pantheosorbonne.cri.HLFacade;
 
@@ -282,8 +283,8 @@ public class ReactiveForwarding {
     private final TopologyListener topologyListener = new InternalTopologyListener();
 
     private ExecutorService blackHoleExecutor;
-    final static Collection<HostId> blockedHosts = new HashSet<>();
-    final static Collection<String> blockedHostPairs = new HashSet<>();
+    final static Collection<HostId> blockedHosts = Sets.newConcurrentHashSet();
+    final static Collection<String> blockedHostPairs = Sets.newConcurrentHashSet();
 
 
     private void logToFile(String log) {
@@ -379,7 +380,7 @@ public class ReactiveForwarding {
 			while (true) {
 
 				try {
-					log.warn("host count : " + hostService.getHostCount());
+					
 					Thread.sleep(500);
 					facade.dump();
 
@@ -451,7 +452,7 @@ public class ReactiveForwarding {
 
 
                         }
-                        Thread.sleep(3000);
+                        Thread.sleep(10);
 
 
                     } catch (IOException | InterruptedException fnf) {

@@ -3,7 +3,7 @@ import os
 import re
 from collections import __init__
 import collections
-import networkx
+import networkx as nx
 
 from flows import DropFlowLog, OutputFlowLog, EthPacket
 
@@ -79,10 +79,9 @@ def get_mgt_logs(management_commands):
 
 
 def generate_flow_graph(flow_logs, timestamp):
-    g = networkx.Graph()
+    g = nx.DiGraph()
     for ts, hosts in [(kk, vv) for kk, vv in flow_logs.items() if kk == timestamp]:
 
-        g = networkx.DiGraph()
         for log in [vv for vv in hosts if isinstance(vv, OutputFlowLog)]:
             if log.to_host:
 
@@ -117,6 +116,23 @@ def add_host_graph_nodes(g, host_logs, timestamp):
             g.add_node(mac, flow=[])
 
 
+def all_simple_path(g, host1, host2):
+    return cached_all_simple_path(";".join(list(nx.generate_adjlist(g))), host1, host2)
+
+
+import functools
+
+
+import cachetools
+from cachetools.keys import hashkey
+from cachetools import cached
+
+
+@cached(cache={}, key=lambda g,host1,host2: hashkey(host1+host2))
+def cached_all_simple_path(g, host1, host2):
+    return list(nx.algorithms.all_simple_paths(g, host1, host2))
+
+
 def generate_connectivity_from_flow(g, hosts_mac):
     results = []
     for host1, host2 in [(aa, bb) for aa in hosts_mac for bb in hosts_mac if aa != bb]:
@@ -125,36 +141,45 @@ def generate_connectivity_from_flow(g, hosts_mac):
         trace = ""
         packet = EthPacket(host1, host2)
         trace += "\tchecking connectivity for %s %s\n" % (host1, host2)
-        for path in networkx.algorithms.shortest_simple_paths(g, host1, host2):
+        for path in cached_all_simple_path(g, host1, host2):
 
             trace += "\t\tcandidate: %s\n" % path
             try:
                 for src, dst in zip(path, path[1:]):
-                    for src_flow in g.nodes[src].get("flow", []):
-                        if src_flow.isDropping(packet):
-                            raise DroppedOnPathException()
-                    for dst_flow in g.nodes[dst].get("flow", []):
-                        if dst_flow.isDropping(packet):
-                            raise DroppedOnPathException()
-                    for edge_flow in g.edges[(src, dst)].get("flow", []):
-                        if (isinstance(edge_flow, DropFlowLog)):
-                            if edge_flow.isDropping(packet):
+                    if src in g.nodes:
+                        for src_flow in g.nodes[src].get("flow", []):
+                            if src_flow.isDropping(packet):
                                 raise DroppedOnPathException()
+                    else:
+                        raise DroppedOnPathException()
+                    if dst in g.nodes:
+                        for dst_flow in g.nodes[dst].get("flow", []):
+                            if dst_flow.isDropping(packet):
+                                raise DroppedOnPathException()
+                    else:
+                        raise DroppedOnPathException()
+                    if (src, dst) in g.edges:
+                        for edge_flow in g.edges[(src, dst)].get("flow", []):
+                            if (isinstance(edge_flow, DropFlowLog)):
+                                if edge_flow.isDropping(packet):
+                                    raise DroppedOnPathException()
 
                     valid_flow_output = False
-                    for output_flow in g.edges[(src, dst)]["flow"]:
-                        next_device_or_host = output_flow.get_next_device(packet.src, packet.dst)
-                        if next_device_or_host == dst:
-                            valid_flow_output = True
-                            trace += "\t\t%s %s ok\n" % (src, dst)
-                            break
-                    if not valid_flow_output:
+                    if (src, dst) in g.edges:
+                        for output_flow in g.edges[(src, dst)]["flow"]:
+                            next_device_or_host = output_flow.get_next_device(packet.src, packet.dst)
+                            if next_device_or_host == dst:
+                                valid_flow_output = True
+                                trace += "\t\t%s %s ok\n" % (src, dst)
+                                break
+                        if not valid_flow_output:
+                            raise NextDeviceOnPathAbsentException()
+                    else:
                         raise NextDeviceOnPathAbsentException()
                 break
             except (NextDeviceOnPathAbsentException, DroppedOnPathException) as e:
                 trace += "\t\t%s %s ko\n" % (src, dst)
                 trace += "\t\ttrying another path\n"
-                print(" Nope ]]]]]] %s" % path)
                 continue
             break  # success!
         else:
@@ -170,12 +195,9 @@ def generate_connectivity_from_flow(g, hosts_mac):
 
 
 def generate_conformance_results(results, rules, verbose=False):
-
-
     security_breach = 0
     connectivity_breach = 0
     for h1, h2, can_talk in results:
-
 
         if can_talk:
             if h1 in rules[0] or h2 in rules[0] or (h1, h2) in rules[1] or (h2, h1) in rules[1]:
@@ -224,7 +246,11 @@ def get_mgt_rules_for_timestamp(k, mgt_rules):
             break
         else:
             prev = i
-    return mgt_rules[prev]
+    else:
+        print("no new policy after log")
+        return prev, mgt_rules[prev]
+    return prev, mgt_rules[prev]
+
 
 
 def should_check_connectivity(src, dst):

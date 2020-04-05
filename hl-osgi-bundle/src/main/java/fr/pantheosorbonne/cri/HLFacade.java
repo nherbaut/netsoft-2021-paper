@@ -9,6 +9,7 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -30,6 +31,7 @@ import org.onosproject.net.host.HostService;
 import org.onosproject.net.intent.HostToHostIntent;
 import org.onosproject.net.intent.Intent;
 import org.onosproject.net.intent.IntentService;
+import org.onosproject.net.topology.TopologyEdge;
 import org.onosproject.net.topology.TopologyGraph;
 import org.onosproject.net.topology.TopologyService;
 import org.slf4j.Logger;
@@ -106,20 +108,23 @@ public class HLFacade {
 
 	public void dump() {
 
-		long now =System.currentTimeMillis();
+		long now = System.currentTimeMillis();
 
 		try {
-			var nowStr=""+now;
-			String f1=nowStr.substring(0,6);
-			String f2=nowStr.substring(6,9);
-			String f3=nowStr.substring(9);
-			
-			var dst = Paths.get("/home/nherbaut/logs/" , f1,f2,f3);
-			Files.createDirectories(Paths.get("/home/nherbaut/logs/" , f1,f2,f3)); 
-			var flowWriter = new BufferedWriter(new FileWriter(Paths.get(dst.toString() ,"flow.log").toString(), true));
-			var intentWriter = new BufferedWriter(new FileWriter(Paths.get(dst.toString() ,"intent.log").toString(), true));
-			var hostsWriter = new BufferedWriter(new FileWriter(Paths.get(dst.toString() ,"hosts.log").toString(), true));
-			
+			var nowStr = "" + now;
+			String f1 = nowStr.substring(0, 6);
+			String f2 = nowStr.substring(6, 9);
+			String f3 = nowStr.substring(9);
+
+			var dst = Paths.get("/home/nherbaut/logs/", f1, f2, f3);
+			Files.createDirectories(Paths.get("/home/nherbaut/logs/", f1, f2, f3));
+			var flowWriter = new BufferedWriter(new FileWriter(Paths.get(dst.toString(), "flow.log").toString(), true));
+			var intentWriter = new BufferedWriter(
+					new FileWriter(Paths.get(dst.toString(), "intent.log").toString(), true));
+			var hostsWriter = new BufferedWriter(
+					new FileWriter(Paths.get(dst.toString(), "hosts.log").toString(), true));
+			var topologyWriter = new BufferedWriter(
+					new FileWriter(Paths.get(dst.toString(), "topology.log").toString(), true));
 
 			for (Device d : deviceService.getDevices(Type.SWITCH)) {
 				for (FlowEntry fe : frs.getFlowEntries(d.id())) {
@@ -141,8 +146,25 @@ public class HLFacade {
 			}
 			hostsWriter.flush();
 			hostsWriter.close();
+
+			writeTopo(topoService.getGraph(topoService.currentTopology()).getEdges(), topologyWriter);
+			topologyWriter.flush();
+			topologyWriter.close();
+
 		} catch (IOException e) {
 			log.error("failed to write log", e);
+		}
+
+	}
+
+	private void writeTopo(Set<TopologyEdge> edges, BufferedWriter topologyWriter) {
+		for (TopologyEdge e : edges) {
+			try {
+				topologyWriter.append(e.src().deviceId().toString()).append("\t").append(e.dst().deviceId().toString())
+						.append("\n");
+			} catch (IOException e1) {
+				log.warn("failed to write log", e1);
+			}
 		}
 
 	}
@@ -202,22 +224,26 @@ public class HLFacade {
 			}
 
 			Function<OutputInstruction, DeviceId> mapToNextDevice = o -> graph.getVertexes().stream()//
-					//.peek(v -> writeDebug("available vertex:" + v.toString(), w))
+					// .peek(v -> writeDebug("available vertex:" + v.toString(), w))
 					.filter(v -> v.deviceId().equals(rule.deviceId()))//
-					//.peek(v -> writeDebug("matching vertex with device id" + v.toString(), w))
+					// .peek(v -> writeDebug("matching vertex with device id" + v.toString(), w))
 					.map(v -> graph.getEdgesFrom(v).stream()//
-							//.peek(e -> writeDebug("ports from edge " + e.link().src().port().toString(), w))
+							// .peek(e -> writeDebug("ports from edge " + e.link().src().port().toString(),
+							// w))
 							.filter(e -> e.link().src().port().equals(o.port()))//
-							//.peek(e -> writeDebug("matching ports from edge " + e.link().src().port().toString(), w))
+							// .peek(e -> writeDebug("matching ports from edge " +
+							// e.link().src().port().toString(), w))
 							.map(e -> e.dst().deviceId())//
-							//.peek(d -> writeDebug("matching next device " + d, w))//
+							// .peek(d -> writeDebug("matching next device " + d, w))//
 							.findFirst().orElseThrow(() -> {
 								return new NoSuchElementException("failed to find ");
 							}))//
 					.findFirst()//
 					.orElseThrow();
 
-			//writeDebug(rule.treatment().allInstructions().stream().map(i -> i.type().toString()).collect(Collectors.toSet()).stream().collect(Collectors.joining(",")) + "\n", w);
+			// writeDebug(rule.treatment().allInstructions().stream().map(i ->
+			// i.type().toString()).collect(Collectors.toSet()).stream().collect(Collectors.joining(","))
+			// + "\n", w);
 
 			String sendTo = null;
 			try {

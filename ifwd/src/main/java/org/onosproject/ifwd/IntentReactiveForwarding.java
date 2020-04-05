@@ -65,6 +65,7 @@ import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.component.annotations.ReferenceCardinality;
 import org.slf4j.Logger;
 
+import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
 
 import fr.pantheosorbonne.cri.HLFacade;
@@ -101,9 +102,9 @@ public class IntentReactiveForwarding {
 
 	@Reference(cardinality = ReferenceCardinality.MANDATORY)
 	protected DeviceService deviceService;
-	
+
 	@Reference(cardinality = ReferenceCardinality.MANDATORY)
-    protected EdgePortService edgePortService;
+	protected EdgePortService edgePortService;
 
 	private ReactivePacketProcessor processor = new ReactivePacketProcessor();
 	private ApplicationId appId;
@@ -112,8 +113,8 @@ public class IntentReactiveForwarding {
 
 	private static final EnumSet<IntentState> WITHDRAWN_STATES = EnumSet.of(IntentState.WITHDRAWN,
 			IntentState.WITHDRAWING, IntentState.WITHDRAW_REQ);
-	final static Collection<HostId> blockedHosts = new HashSet<>();
-	final static Collection<String> blockedHostPairs = new HashSet<>();
+	final static Collection<HostId> blockedHosts = Sets.newConcurrentHashSet();
+	final static Collection<String> blockedHostPairs = Sets.newConcurrentHashSet();
 
 	@Activate
 	public void activate() {
@@ -139,14 +140,13 @@ public class IntentReactiveForwarding {
 				.withIntentService(intentService)//
 				.withTopologyService(topologyService)//
 				.withHostService(hostService)//
-				.withEdgePortService(edgePortService)
-				.build();
+				.withEdgePortService(edgePortService).build();
 
 		Runnable r = () -> {
 			while (true) {
 
 				try {
-					Thread.sleep(3000);
+					Thread.sleep(100);
 					facade.dump();
 
 				} catch (Throwable t) {
@@ -185,8 +185,8 @@ public class IntentReactiveForwarding {
 									if (blockedHostPairs.add(HostId.hostId(items[1]) + "" + HostId.hostId(items[2]))) {
 										logToFile("block from " + HostId.hostId(items[1]) + " to "
 												+ HostId.hostId(items[2]));
-										removeIntentsForHostPair(HostId.hostId(items[1]),HostId.hostId(items[2]));
-										
+										removeIntentsForHostPair(HostId.hostId(items[1]), HostId.hostId(items[2]));
+
 									}
 									break;
 								default:
@@ -200,25 +200,25 @@ public class IntentReactiveForwarding {
 								.filter(l -> !lines.contains("block " + l.toString())).collect(Collectors.toSet());
 						newlyAllowedHosts.stream().forEach(h -> logToFile("unblock " + h));
 						blockedHosts.removeAll(newlyAllowedHosts);
-						
+
 						Set<String> pairsToRemove = new HashSet<String>();
-						for(String pair : blockedHostPairs) {
-							boolean found=false;
-							String h1=pair.substring(0,22);
-							String h2=pair.substring(22);
-							for(String line : lines) {
-								if(line.equals("block-from-to "+h1+" "+h2)) {
-									found=true;
+						for (String pair : blockedHostPairs) {
+							boolean found = false;
+							String h1 = pair.substring(0, 22);
+							String h2 = pair.substring(22);
+							for (String line : lines) {
+								if (line.equals("block-from-to " + h1 + " " + h2)) {
+									found = true;
 									break;
 								}
 							}
-							
-							if(!found) {
+
+							if (!found) {
 								pairsToRemove.add(pair);
 							}
-							
+
 						}
-						
+
 						blockedHostPairs.removeAll(pairsToRemove);
 
 						Thread.sleep(10);
@@ -238,11 +238,11 @@ public class IntentReactiveForwarding {
 						.map(i -> (HostToHostIntent) i) //
 						.filter(i -> i.one().equals(hostId) || i.two().equals(hostId)) //
 						.collect(Collectors.toUnmodifiableSet()); //
-					intentsToDiscard.parallelStream().peek(i -> log.warn("removing intent from {} to {}", i.one(), i.two()))
+				intentsToDiscard.parallelStream().peek(i -> log.warn("removing intent from {} to {}", i.one(), i.two()))
 						.forEach(intent -> intentService.withdraw(intent));
 
 			}
-			
+
 			private void removeIntentsForHostPair(HostId src, HostId dst) {
 
 				Set<HostToHostIntent> intentsToDiscard = Streams.stream(intentService.getIntents())
@@ -250,7 +250,7 @@ public class IntentReactiveForwarding {
 						.map(i -> (HostToHostIntent) i) //
 						.filter(i -> i.one().equals(src) || i.two().equals(dst)) //
 						.collect(Collectors.toUnmodifiableSet()); //
-					intentsToDiscard.parallelStream().peek(i -> log.warn("removing intent from {} to {}", i.one(), i.two()))
+				intentsToDiscard.parallelStream().peek(i -> log.warn("removing intent from {} to {}", i.one(), i.two()))
 						.forEach(intent -> intentService.withdraw(intent));
 
 			}
