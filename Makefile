@@ -5,16 +5,16 @@ reactive: hl-bundle-build hl-bundle-deploy reactive-build reactive-deploy
 hl-bundle-build:
 	$(MAKE) build -C hl-osgi-bundle
 intent-build:
-	$(MAKE) build -C ifwd
+	$(MAKE) build -C scoi
 reactive-build:
-	$(MAKE) build -C fwd2
+	$(MAKE) build -C sco
 
 
 hl-bundle-deploy:
 	$(MAKE) deploy -C hl-osgi-bundle
 intent-deploy:
-	$(MAKE) deploy -C ifwd
+	$(MAKE) deploy -C scoi
 reactive-deploy:
-	$(MAKE) deploy -C fwd2
+	$(MAKE) deploy -C sco
 
 
