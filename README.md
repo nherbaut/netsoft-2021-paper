@@ -1,6 +1,6 @@
 # What is this project? #
 
-This repository contains sources for our submission to the BRAINS conference
+This repository contains sources for our submission to the netsoft-2021 conference
 
 ## What's inside ? ##
 
